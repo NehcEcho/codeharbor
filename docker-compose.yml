@@ -1,0 +1,12 @@
+services:
+  opencode-remote:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: opencode-remote
+    ports:
+      - "4173:4173"
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4173

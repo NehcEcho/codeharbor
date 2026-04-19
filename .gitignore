@@ -1,0 +1,8 @@
+node_modules/
+dist/
+test-results/
+project_unzipped/
+*.log
+*.zip
+.opencode-remote-runtime.json
+nul
