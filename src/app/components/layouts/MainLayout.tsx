@@ -86,6 +86,7 @@ export function MainLayout({
         isConnected={isConnected}
         onMenuClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         onStatusClick={() => setIsMobileStatusOpen(!isMobileStatusOpen)}
+        onSettingsClick={() => {}}
         serverLabel={serverLabel}
         sessionLabel={selectedSession?.title || "No active session"}
       />
@@ -159,7 +160,7 @@ export function MainLayout({
           )}
         </main>
 
-        {isConnected && permissionMessages.length > 0 ? (
+        {isConnected ? (
           <>
             <div className="hidden lg:block w-80 border-l border-stone-200/60 bg-[#FAFAEE]/30 flex-shrink-0">
               <StatusPanel permissionMessages={permissionMessages} onPermissionAction={onPermissionAction} />

@@ -3,11 +3,9 @@ import { AnimatePresence, motion } from "motion/react";
 import { clsx } from "clsx";
 import {
   ArrowUpIcon,
-  GlobeIcon,
   LightbulbIcon,
   PaperclipIcon,
   Settings2Icon,
-  TerminalIcon,
   WrenchIcon,
 } from "../ui/icons";
 
@@ -17,7 +15,6 @@ interface CommandInputProps {
   onSend: () => void;
   agent: "build" | "plan";
   onAgentChange: (agent: "build" | "plan") => void;
-  serverLabel: string;
 }
 
 export function CommandInput({
@@ -26,7 +23,6 @@ export function CommandInput({
   onSend,
   agent,
   onAgentChange,
-  serverLabel,
 }: CommandInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
@@ -47,13 +43,6 @@ export function CommandInput({
 
   return (
     <div className="relative w-full mx-auto">
-      <div className="absolute -top-12 left-0 right-0 flex justify-center pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 bg-white border border-stone-200/60 rounded-full shadow-sm text-xs font-medium text-stone-600 mb-3 backdrop-blur-md bg-white/80">
-          <TerminalIcon className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Connected: {serverLabel || "OpenCode server"}</span>
-        </div>
-      </div>
-
       <div className="bg-white border border-stone-300 shadow-[0_4px_24px_rgba(0,0,0,0.04)] rounded-2xl flex flex-col focus-within:ring-4 focus-within:ring-stone-900/5 focus-within:border-stone-400 transition-all overflow-visible relative z-20">
         <textarea
           ref={textareaRef}
@@ -171,7 +160,6 @@ export function CommandInput({
       </div>
 
       <div className="text-center mt-3 text-[11px] text-stone-400 font-medium tracking-wide flex items-center justify-center gap-1.5">
-        <GlobeIcon className="w-3.5 h-3.5" />
         OpenCode can read and modify your local environment. Press
         <kbd className="font-sans px-1.5 py-0.5 bg-stone-100 rounded border border-stone-200 shadow-sm ml-0.5 text-stone-500">
           Enter

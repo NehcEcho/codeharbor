@@ -4,6 +4,7 @@ interface TopNavProps {
   isConnected: boolean;
   onMenuClick: () => void;
   onStatusClick: () => void;
+  onSettingsClick: () => void;
   serverLabel: string;
   sessionLabel: string;
 }
@@ -12,6 +13,7 @@ export function TopNav({
   isConnected,
   onMenuClick,
   onStatusClick,
+  onSettingsClick,
   serverLabel,
   sessionLabel,
 }: TopNavProps) {
@@ -64,7 +66,12 @@ export function TopNav({
             OFFLINE
           </div>
         )}
-        <button className="p-1.5 hover:bg-stone-100 rounded-md text-stone-500 transition-colors" title="Settings" type="button">
+        <button
+          className="p-1.5 hover:bg-stone-100 rounded-md text-stone-500 transition-colors"
+          title="Settings"
+          type="button"
+          onClick={onSettingsClick}
+        >
           <SettingsIcon className="w-4 h-4" />
         </button>
       </div>

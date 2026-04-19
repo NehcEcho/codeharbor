@@ -37,14 +37,14 @@ export function WorkspacePage({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-white">
-      <div className="shrink-0 px-4 sm:px-8 pt-6 pb-2 bg-gradient-to-b from-white via-white to-white/95 border-b border-stone-100/80">
-        <div className="max-w-3xl mx-auto space-y-8">
-          <div className="text-center pb-8 pt-4">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-stone-50 border border-stone-200/60 shadow-sm mb-4 text-stone-900">
-              <BotIcon className="w-6 h-6" />
-            </div>
-            <h2 className="text-xl font-medium text-stone-900 tracking-tight">{sessionTitle}</h2>
-            <p className="text-sm text-stone-500 mt-2">Server connected at {serverLabel || "OpenCode server"}</p>
+      <div className="shrink-0 px-4 sm:px-8 pt-4 pb-3 bg-white/95 border-b border-stone-100/80">
+        <div className={`mx-auto flex items-center gap-3 ${hasSidePanel ? "max-w-3xl xl:max-w-[52rem]" : "max-w-4xl"}`}>
+          <div className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-stone-50 border border-stone-200/60 shadow-sm text-stone-900 shrink-0">
+            <BotIcon className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-medium text-stone-900 tracking-tight truncate">{sessionTitle}</h2>
+            <p className="text-xs sm:text-sm text-stone-500 truncate">{serverLabel || "OpenCode server"}</p>
           </div>
         </div>
       </div>
@@ -69,7 +69,6 @@ export function WorkspacePage({
             onSend={onSend}
             agent={agent}
             onAgentChange={onAgentChange}
-            serverLabel={serverLabel}
           />
         </div>
       </div>
