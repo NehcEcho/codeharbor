@@ -34,7 +34,7 @@ export function ConnectPanel({
           <input
             value={value.baseUrl}
             onChange={(event) => onChange({ ...value, baseUrl: event.target.value })}
-            placeholder="http://192.168.1.10:4096"
+            placeholder="http://192.168.1.10:1656"
           />
         </label>
         <label>

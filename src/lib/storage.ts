@@ -4,7 +4,7 @@ const STORAGE_KEY = "opencode-remote-config";
 
 export function loadServerConfig(): ServerConfig {
   const fallback: ServerConfig = {
-    baseUrl: "http://127.0.0.1:4096",
+    baseUrl: "http://127.0.0.1:1656",
     username: "opencode",
     password: "",
   };

@@ -12,7 +12,7 @@ test("loads remote dashboard and shows core controls", async ({ page }) => {
   await expect(page.getByRole("button", { name: "刷新 Diff" })).toBeVisible();
 
   const serverUrl = page.getByLabel("Server URL");
-  await expect(serverUrl).toHaveValue("http://127.0.0.1:4096");
+  await expect(serverUrl).toHaveValue("http://127.0.0.1:1656");
 
   const draft = page.getByPlaceholder("比如：修复 auth middleware 的 bug，并解释修改原因。");
   await draft.fill("帮我检查当前项目结构");

@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const HOST = process.env.HOST || "0.0.0.0";
-const PORT = Number(process.env.PORT || 4173);
+const PORT = Number(process.env.PORT || 1657);
 const DIST_DIR = path.join(__dirname, "dist");
 const INDEX_HTML = path.join(DIST_DIR, "index.html");
 const PROXY_PREFIX = "/api/opencode";

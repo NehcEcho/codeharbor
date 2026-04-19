@@ -6,8 +6,8 @@ Set-Location $projectRoot
 # Editable startup settings
 $serverUsername = "opencode"
 $serverPassword = "opencode-demo-4096"
-$serverPort = 4096
-$webPort = 5173
+$serverPort = 1656
+$webPort = 1657
 $serverUrl = "http://127.0.0.1:$serverPort"
 $webUrl = "http://127.0.0.1:$webPort"
 $runtimeFile = Join-Path $projectRoot ".opencode-remote-runtime.json"

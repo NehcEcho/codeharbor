@@ -10,6 +10,17 @@ It provides:
 - local launch scripts for Windows and Linux
 - optional Docker Compose deployment
 
+## Default ports
+
+This project now uses these local ports by default:
+
+```text
+OpenCode server: 1656
+Web UI:          1657
+```
+
+If you start the bundled scripts, use these values unless you intentionally change the scripts.
+
 ## Stack
 
 - React
@@ -40,6 +51,12 @@ Start the frontend only:
 npm run dev
 ```
 
+By default the Vite dev server runs on:
+
+```text
+http://127.0.0.1:1657
+```
+
 Build the app:
 
 ```bash
@@ -52,12 +69,14 @@ Run the production Node server after a build:
 npm run start
 ```
 
+The production server also listens on port `1657` unless overridden with environment variables.
+
 ## Default local OpenCode server credentials
 
 The bundled local launch scripts use these defaults:
 
 ```text
-Server URL: http://127.0.0.1:4096
+Server URL: http://127.0.0.1:1656
 Username:   opencode
 Password:   opencode-demo-4096
 ```
@@ -72,9 +91,16 @@ start-opencode-remote.cmd
 
 This uses the PowerShell helper script to:
 
-- start OpenCode on port `4096`
-- start the web UI on port `5173`
+- start OpenCode on port `1656`
+- start the web UI on port `1657`
 - open the browser
+
+Files involved:
+
+- `start-opencode-remote.cmd`
+- `start-opencode-remote.ps1`
+- `stop-opencode-remote.cmd`
+- `stop-opencode-remote.ps1`
 
 ### Stop everything
 
@@ -104,10 +130,15 @@ Stop:
 
 The Linux launcher will:
 
-- start OpenCode on port `4096`
-- start the Vite web UI on port `5173`
+- start OpenCode on port `1656`
+- start the Vite web UI on port `1657`
 - try to open a browser
 - stop both processes when you press Enter
+
+Files involved:
+
+- `start-opencode-remote.sh`
+- `stop-opencode-remote.sh`
 
 ## Docker Compose
 
@@ -120,7 +151,7 @@ docker compose up -d --build
 Then open:
 
 ```text
-http://localhost:4173
+http://localhost:1657
 ```
 
 Stop it with:
@@ -130,6 +161,28 @@ docker compose down
 ```
 
 More notes are in `DEPLOY.md`.
+
+## Manual OpenCode startup
+
+If you do not want to use the bundled scripts, you can run OpenCode yourself:
+
+```bash
+OPENCODE_SERVER_USERNAME=opencode OPENCODE_SERVER_PASSWORD=opencode-demo-4096 opencode serve --hostname 0.0.0.0 --port 1656
+```
+
+Then start the frontend separately:
+
+```bash
+npm run dev -- --host 0.0.0.0 --port 1657
+```
+
+Open the app and connect with:
+
+```text
+Server URL: http://127.0.0.1:1656
+Username:   opencode
+Password:   opencode-demo-4096
+```
 
 ## Project structure
 
@@ -148,3 +201,10 @@ Dockerfile               production image
 - The UI connects to OpenCode through the built-in proxy path `/api/opencode/*`
 - The right panel is reserved for permission-related actions
 - Session data and server config are stored in the browser locally
+
+## Common workflow
+
+1. Start the bundled script for your platform
+2. Open `http://127.0.0.1:1657`
+3. Confirm the connection settings point to `http://127.0.0.1:1656`
+4. Start or resume a coding session

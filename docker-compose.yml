@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: opencode-remote
     ports:
-      - "4173:4173"
+      - "1657:1657"
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
-      PORT: 4173
+      PORT: 1657

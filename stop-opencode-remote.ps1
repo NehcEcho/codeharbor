@@ -12,7 +12,7 @@ function Stop-ManagedProcessTree {
 }
 
 if (-not (Test-Path $runtimeFile)) {
-  $ports = @(4096, 5173)
+  $ports = @(1656, 1657)
   $connections = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $ports -contains $_.LocalPort }
   $pids = $connections | Select-Object -ExpandProperty OwningProcess -Unique
   foreach ($processId in $pids) {

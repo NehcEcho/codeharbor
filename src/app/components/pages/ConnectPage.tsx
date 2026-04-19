@@ -58,7 +58,7 @@ export function ConnectPage({
                   value={config.baseUrl}
                   onChange={(e) => onChange({ ...config, baseUrl: e.target.value })}
                   className="w-full pl-10 pr-4 py-3 bg-white border border-stone-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-stone-900/5 focus:border-stone-400 transition-all text-stone-700 shadow-sm"
-                  placeholder="http://192.168.1.10:4096"
+                  placeholder="http://192.168.1.10:1656"
                   required
                 />
               </div>

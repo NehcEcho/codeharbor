@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: "http://127.0.0.1:1657",
     headless: true,
   },
   reporter: "list",
