@@ -9,9 +9,13 @@ export function WorkspacePage({
   messages,
   draft,
   agent,
+  isSending,
+  isBusy,
+  isStalled,
   onDraftChange,
   onAgentChange,
   onSend,
+  onPermissionAction,
   serverLabel,
   hasSidePanel,
 }: {
@@ -19,9 +23,13 @@ export function WorkspacePage({
   messages: ChatMessage[];
   draft: string;
   agent: "build" | "plan";
+  isSending: boolean;
+  isBusy: boolean;
+  isStalled: boolean;
   onDraftChange: (value: string) => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
+  onPermissionAction: (id: string, action: "approved" | "denied") => void;
   serverLabel: string;
   hasSidePanel: boolean;
 }) {
@@ -47,6 +55,19 @@ export function WorkspacePage({
             <p className="text-xs sm:text-sm text-stone-500 truncate">{serverLabel || "OpenCode server"}</p>
           </div>
         </div>
+        {isStalled ? (
+          <div className={`mx-auto mt-3 ${hasSidePanel ? "max-w-3xl xl:max-w-[52rem]" : "max-w-4xl"}`}>
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+              This session looks stuck. OpenCode has stayed busy without new activity for a while. You can keep typing, but starting a new session is likely the fastest recovery path.
+            </div>
+          </div>
+        ) : isBusy ? (
+          <div className={`mx-auto mt-3 ${hasSidePanel ? "max-w-3xl xl:max-w-[52rem]" : "max-w-4xl"}`}>
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              OpenCode is still processing this session. If nothing new appears, it may be waiting on a long-running tool or stuck server-side.
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-6" ref={feedRef}>
@@ -56,7 +77,7 @@ export function WorkspacePage({
               No messages yet. Send the first remote coding instruction to begin.
             </div>
           ) : (
-            <MessageFeed messages={messages} />
+            <MessageFeed messages={messages} onPermissionAction={onPermissionAction} />
           )}
         </div>
       </div>
@@ -69,6 +90,8 @@ export function WorkspacePage({
             onSend={onSend}
             agent={agent}
             onAgentChange={onAgentChange}
+            isSending={isSending}
+            isBusy={isBusy}
           />
         </div>
       </div>

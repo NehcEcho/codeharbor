@@ -111,7 +111,7 @@ function upsertMessagePart(current: ChatMessage[], part: { messageID?: string; i
     if (partIndex >= 0) {
       nextParts[partIndex] = { ...nextParts[partIndex], ...part };
     } else {
-      nextParts.push(part);
+      nextParts.push({ ...part });
     }
 
     return { ...message, parts: nextParts };
@@ -161,6 +161,19 @@ function upsertSession(current: Session[], nextSession: Session) {
   return [...next].sort((left, right) => (right.time?.updated || 0) - (left.time?.updated || 0));
 }
 
+type SessionActivityMap = Record<string, { busySince?: number; lastActivityAt?: number }>;
+
+function markSessionActivity(current: SessionActivityMap, sessionID: string, timestamp = Date.now()) {
+  const next = current[sessionID] || {};
+  return {
+    ...current,
+    [sessionID]: {
+      ...next,
+      lastActivityAt: timestamp,
+    },
+  };
+}
+
 function App() {
   const [config, setConfig] = useState<ServerConfig>(() => loadServerConfig());
   const [connectStatus, setConnectStatus] = useState("尚未连接");
@@ -175,11 +188,24 @@ function App() {
   const [isSending, setIsSending] = useState(false);
   const [diffCount, setDiffCount] = useState(0);
   const [events, setEvents] = useState<string[]>([]);
+  const [sessionActivity, setSessionActivity] = useState<SessionActivityMap>({});
+  const [clock, setClock] = useState(() => Date.now());
   const refreshTimeoutRef = useRef<number | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) || null,
     [sessions, selectedSessionId],
+  );
+
+  const selectedSessionStatus = selectedSessionId ? statusMap[selectedSessionId] : undefined;
+  const isSessionBusy = selectedSessionStatus === "busy";
+  const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
+  const isSessionStalled = Boolean(
+    isSessionBusy &&
+      selectedActivity?.busySince &&
+      clock - selectedActivity.busySince > 15000 &&
+      clock - (selectedActivity.lastActivityAt || selectedActivity.busySince) > 15000,
   );
 
   const refreshSessions = useCallback(async (targetConfig: ServerConfig = config) => {
@@ -269,7 +295,8 @@ function App() {
         agent: selectedAgent,
         parts: [{ type: "text", text }],
       });
-      await Promise.all([refreshMessages(), refreshSessions(), refreshDiff()]);
+      void refreshMessages();
+      void refreshSessions();
     } catch (error) {
       setDraft(text);
       setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
@@ -280,10 +307,36 @@ function App() {
     }
   }, [config, draft, isSending, refreshDiff, refreshMessages, refreshSessions, selectedAgent, selectedSessionId]);
 
-  const handlePermissionAction = useCallback((id: string, action: "approved" | "denied") => {
-    setMessages((current) =>
-      current.map((message) => (message.id === id ? { ...message, status: action } : message)),
-    );
+  const handlePermissionAction = useCallback(
+    async (id: string, action: "approved" | "denied") => {
+      if (!selectedSessionId) return;
+
+      setMessages((current) =>
+        current.map((message) => (message.id === id ? { ...message, status: action } : message)),
+      );
+
+      try {
+        await opencodeApi.respondPermission(
+          config,
+          selectedSessionId,
+          id,
+          action === "approved" ? "allow" : "deny",
+        );
+        await Promise.all([refreshMessages(), refreshSessions(), refreshDiff()]);
+      } catch (error) {
+        setMessages((current) =>
+          current.map((message) => (message.id === id ? { ...message, status: "pending" } : message)),
+        );
+        const message = error instanceof Error ? error.message : "permission response failed";
+        setEvents((current) => [`Permission action failed - ${message}`, ...current].slice(0, 20));
+      }
+    },
+    [config, refreshDiff, refreshMessages, refreshSessions, selectedSessionId],
+  );
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setClock(Date.now()), 2000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -301,6 +354,14 @@ function App() {
     if (connectionState !== "success" || !config.password) return;
 
     const controller = new AbortController();
+    let isDisposed = false;
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
 
     const scheduleRefresh = () => {
       if (refreshTimeoutRef.current) {
@@ -316,107 +377,157 @@ function App() {
       }, 250);
     };
 
-    void opencodeApi
-      .streamEvents(
-        config,
-        (event) => {
-          const payload =
-            event.data && typeof event.data === "object" && "type" in (event.data as Record<string, unknown>)
-              ? (event.data as { type?: string; properties?: Record<string, unknown> })
-              : null;
+    const connectStream = () => {
+      void opencodeApi
+        .streamEvents(
+          config,
+          (event) => {
+            const payload =
+              event.data && typeof event.data === "object" && "type" in (event.data as Record<string, unknown>)
+                ? (event.data as { type?: string; properties?: Record<string, unknown> })
+                : null;
 
-          const payloadType = payload?.type || event.type;
-          const properties = payload?.properties || {};
+            const payloadType = payload?.type || event.type;
+            const properties = payload?.properties || {};
 
-          if (payloadType === "message.updated") {
-            const info = properties.info as MessageEnvelope["info"] | undefined;
-            if (info?.sessionID === selectedSessionId) {
-              setMessages((current) => reconcilePending(upsertMessageInfo(current, info)));
-            }
-          }
-
-          if (payloadType === "message.part.updated") {
-            const part = properties.part as Record<string, unknown> | undefined;
-            if (part?.sessionID === selectedSessionId) {
-              setMessages((current) =>
-                reconcilePending(
-                  upsertMessagePart(current, {
-                    messageID: part.messageID as string | undefined,
-                    id: part.id as string | undefined,
-                    type: part.type as string | undefined,
-                    text: part.text as string | undefined,
-                  }),
-                ),
-              );
-            }
-          }
-
-          if (payloadType === "message.part.delta") {
-            const sessionID = properties.sessionID as string | undefined;
-            if (sessionID === selectedSessionId) {
-              setMessages((current) =>
-                appendMessageDelta(current, {
-                  messageID: properties.messageID as string | undefined,
-                  partID: properties.partID as string | undefined,
-                  field: properties.field as string | undefined,
-                  delta: properties.delta as string | undefined,
-                }),
-              );
-            }
-          }
-
-          if (payloadType === "session.updated") {
-            const info = properties.info as Session | undefined;
-            if (info?.id) {
-              setSessions((current) => upsertSession(current, info));
-            }
-          }
-
-          if (payloadType === "session.status") {
-            const sessionID = properties.sessionID as string | undefined;
-            const status = properties.status as { type?: string; message?: string } | undefined;
-            if (sessionID && status?.type) {
-              const nextStatus = status.type;
-              setStatusMap((current) => ({ ...current, [sessionID]: nextStatus }));
-              if (sessionID === selectedSessionId && status.message) {
-                setEvents((current) => [`${status.type} - ${status.message}`, ...current].slice(0, 20));
+            if (payloadType === "message.updated") {
+              const info = properties.info as MessageEnvelope["info"] | undefined;
+              if (info?.sessionID === selectedSessionId) {
+                setMessages((current) => reconcilePending(upsertMessageInfo(current, info)));
+              }
+              if (info?.sessionID) {
+                setSessionActivity((current) => markSessionActivity(current, info.sessionID as string));
               }
             }
-          }
 
-          if (payloadType === "session.diff") {
-            const sessionID = properties.sessionID as string | undefined;
-            const diff = properties.diff as unknown[] | undefined;
-            if (sessionID === selectedSessionId && Array.isArray(diff)) {
-              setDiffCount(diff.length);
+            if (payloadType === "message.part.updated") {
+              const part = properties.part as Record<string, unknown> | undefined;
+              if (part?.sessionID === selectedSessionId) {
+                setMessages((current) =>
+                  reconcilePending(upsertMessagePart(current, part as { messageID?: string; id?: string; type?: string; text?: string })),
+                );
+              }
+              const partSessionID = typeof part?.sessionID === "string" ? part.sessionID : undefined;
+              if (partSessionID) {
+                setSessionActivity((current) => markSessionActivity(current, partSessionID));
+              }
             }
-          }
 
-          setEvents((current) => {
-            const label = `${payloadType}${event.raw ? ` - ${String(event.raw).slice(0, 120)}` : ""}`;
-            return [label, ...current].slice(0, 20);
-          });
+            if (payloadType === "message.part.delta") {
+              const sessionID = properties.sessionID as string | undefined;
+              if (sessionID === selectedSessionId) {
+                setMessages((current) =>
+                  appendMessageDelta(current, {
+                    messageID: properties.messageID as string | undefined,
+                    partID: properties.partID as string | undefined,
+                    field: properties.field as string | undefined,
+                    delta: properties.delta as string | undefined,
+                  }),
+                );
+              }
+              if (sessionID) {
+                setSessionActivity((current) => markSessionActivity(current, sessionID));
+              }
+            }
 
-          if (payloadType === "session.idle") {
-            scheduleRefresh();
-          }
-        },
-        controller.signal,
-      )
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        const message = error instanceof Error ? error.message : "stream unavailable";
-        setEvents((current) => [`Event stream disconnected - ${message}`, ...current].slice(0, 20));
-      });
+            if (payloadType === "session.updated") {
+              const info = properties.info as Session | undefined;
+              if (info?.id) {
+                setSessions((current) => upsertSession(current, info));
+              }
+            }
+
+            if (payloadType === "session.status") {
+              const sessionID = properties.sessionID as string | undefined;
+              const status = properties.status as { type?: string; message?: string } | undefined;
+              if (sessionID && status?.type) {
+                const nextStatus = status.type;
+                setStatusMap((current) => ({ ...current, [sessionID]: nextStatus }));
+                setSessionActivity((current) => {
+                  const existing = current[sessionID] || {};
+                  if (nextStatus === "busy") {
+                    return {
+                      ...current,
+                      [sessionID]: {
+                        busySince: existing.busySince || Date.now(),
+                        lastActivityAt: existing.lastActivityAt || Date.now(),
+                      },
+                    };
+                  }
+
+                  return {
+                    ...current,
+                    [sessionID]: {
+                      busySince: undefined,
+                      lastActivityAt: Date.now(),
+                    },
+                  };
+                });
+                if (sessionID === selectedSessionId && status.message) {
+                  setEvents((current) => [`${status.type} - ${status.message}`, ...current].slice(0, 20));
+                }
+              }
+            }
+
+            if (payloadType === "session.diff") {
+              const sessionID = properties.sessionID as string | undefined;
+              const diff = properties.diff as unknown[] | undefined;
+              if (sessionID === selectedSessionId && Array.isArray(diff)) {
+                setDiffCount(diff.length);
+              }
+            }
+
+            setEvents((current) => {
+              const label = `${payloadType}${event.raw ? ` - ${String(event.raw).slice(0, 120)}` : ""}`;
+              return [label, ...current].slice(0, 20);
+            });
+
+            if (payloadType === "session.idle") {
+              scheduleRefresh();
+            }
+          },
+          controller.signal,
+        )
+        .catch((error) => {
+          if (controller.signal.aborted || isDisposed) return;
+          const message = error instanceof Error ? error.message : "stream unavailable";
+          setEvents((current) => [`Event stream disconnected - ${message}`, ...current].slice(0, 20));
+          clearReconnectTimer();
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            void refreshSessions();
+            if (selectedSessionId) {
+              void refreshMessages();
+              void refreshDiff();
+            }
+            connectStream();
+          }, 1500);
+        });
+    };
+
+    connectStream();
 
     return () => {
+      isDisposed = true;
       controller.abort();
+      clearReconnectTimer();
       if (refreshTimeoutRef.current) {
         window.clearTimeout(refreshTimeoutRef.current);
         refreshTimeoutRef.current = null;
       }
     };
   }, [config, connectionState, refreshDiff, refreshMessages, refreshSessions, selectedSessionId]);
+
+  useEffect(() => {
+    if (!selectedSessionId || !config.password || !isSessionBusy) return;
+
+    const interval = window.setInterval(() => {
+      void refreshMessages();
+      void refreshDiff();
+      void refreshSessions();
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [config.password, isSessionBusy, refreshDiff, refreshMessages, refreshSessions, selectedSessionId]);
 
   useEffect(() => {
     if (!config.password) return;
@@ -470,8 +581,11 @@ function App() {
       messages={messages}
       draft={draft}
       agent={selectedAgent as "build" | "plan"}
+      isSending={isSending}
+      isBusy={isSessionBusy}
       diffCount={diffCount}
       events={events}
+      isStalled={isSessionStalled}
       onConfigChange={setConfig}
       onConnect={handleConnect}
       onSessionSelect={setSelectedSessionId}

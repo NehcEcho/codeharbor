@@ -1,18 +1,19 @@
 import { AnimatePresence, motion } from "motion/react";
 import { MessageBubble } from "./MessageBubble";
+import { PermissionCard } from "./PermissionCard";
 import type { ChatMessage } from "../../../types";
 
 export function MessageFeed({
   messages,
+  onPermissionAction,
 }: {
   messages: ChatMessage[];
+  onPermissionAction: (id: string, action: "approved" | "denied") => void;
 }) {
-  const visibleMessages = messages.filter((message) => message.role !== "permission");
-
   return (
     <div className="space-y-8 min-h-0">
       <AnimatePresence initial={false}>
-        {visibleMessages.map((message) => (
+        {messages.map((message) => (
           <motion.div
             key={message.id}
             initial={{ opacity: 0, y: 10 }}
@@ -20,7 +21,11 @@ export function MessageFeed({
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             layout
           >
-            <MessageBubble message={message} />
+            {message.role === "permission" ? (
+              <PermissionCard message={message} onAction={(action) => onPermissionAction(message.id, action)} />
+            ) : (
+              <MessageBubble message={message} />
+            )}
           </motion.div>
         ))}
       </AnimatePresence>

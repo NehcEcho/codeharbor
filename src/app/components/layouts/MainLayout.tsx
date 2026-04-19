@@ -26,6 +26,9 @@ export function MainLayout({
   messages,
   draft,
   agent,
+  isSending,
+  isBusy,
+  isStalled,
   diffCount,
   events,
   onConfigChange,
@@ -50,6 +53,9 @@ export function MainLayout({
   messages: ChatMessage[];
   draft: string;
   agent: "build" | "plan";
+  isSending: boolean;
+  isBusy: boolean;
+  isStalled: boolean;
   diffCount: number;
   events: string[];
   onConfigChange: (next: ServerConfig) => void;
@@ -137,17 +143,21 @@ export function MainLayout({
 
         <main className="flex-1 flex flex-col min-w-0 bg-white shadow-[0_0_40px_rgba(0,0,0,0.01)] rounded-tl-2xl border-t border-l border-stone-200/50">
           {isConnected ? (
-            <WorkspacePage
-              session={selectedSession}
-              messages={messages}
-              draft={draft}
-              agent={agent}
-              onDraftChange={onDraftChange}
-              onAgentChange={onAgentChange}
-              onSend={onSend}
-              serverLabel={serverLabel}
-              hasSidePanel={permissionMessages.length > 0}
-            />
+              <WorkspacePage
+                session={selectedSession}
+                messages={messages}
+                draft={draft}
+                agent={agent}
+                isSending={isSending}
+                isBusy={isBusy}
+                isStalled={isStalled}
+                onDraftChange={onDraftChange}
+                onAgentChange={onAgentChange}
+                onSend={onSend}
+                onPermissionAction={onPermissionAction}
+                serverLabel={serverLabel}
+                hasSidePanel={permissionMessages.length > 0}
+              />
           ) : (
             <ConnectPage
               config={config}

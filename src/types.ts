@@ -49,7 +49,7 @@ export type ChatMessage = {
   role: "user" | "assistant" | "tool" | "permission";
   parts: MessagePart[];
   timestampLabel: string;
-  status?: "success" | "approved" | "denied" | "pending";
+  status?: "success" | "approved" | "denied" | "pending" | "running";
   isPending?: boolean;
 };
 

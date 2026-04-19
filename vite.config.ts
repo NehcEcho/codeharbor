@@ -91,6 +91,7 @@ export default defineConfig({
     },
   ],
   server: {
+    allowedHosts: ["am.nehc.store"],
     host: "0.0.0.0",
     port: 1657,
   },
