@@ -61,12 +61,6 @@ export function WorkspacePage({
               This session looks stuck. OpenCode has stayed busy without new activity for a while. You can keep typing, but starting a new session is likely the fastest recovery path.
             </div>
           </div>
-        ) : isBusy ? (
-          <div className={`mx-auto mt-3 ${hasSidePanel ? "max-w-3xl xl:max-w-[52rem]" : "max-w-4xl"}`}>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              OpenCode is still processing this session. If nothing new appears, it may be waiting on a long-running tool or stuck server-side.
-            </div>
-          </div>
         ) : null}
       </div>
 

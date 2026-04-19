@@ -298,7 +298,6 @@ function App() {
       void refreshMessages();
       void refreshSessions();
     } catch (error) {
-      setDraft(text);
       setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
       const message = error instanceof Error ? error.message : "send failed";
       setEvents((current) => [`Send failed - ${message}`, ...current].slice(0, 20));
