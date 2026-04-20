@@ -184,6 +184,218 @@ Username:   opencode
 Password:   opencode-demo-4096
 ```
 
+## Restart guide
+
+If the web UI opens but cannot connect, or the chat stops responding, restart both the OpenCode backend and the web UI.
+
+This section is written so that another session can recover the app without needing any prior context.
+
+### What must be running
+
+This project depends on two separate processes:
+
+1. OpenCode backend
+   Port: `1656`
+   Purpose: stores sessions, runs the model, executes tools, serves health/status APIs
+
+2. Web UI frontend
+   Port: `1657`
+   Purpose: serves the browser interface and proxies requests to the backend
+
+If either process is down, the app will appear broken.
+
+### When to use this guide
+
+Use this guide if any of the following happens:
+
+- the browser page opens but shows connection failed
+- `http://127.0.0.1:1657` does not load
+- the chat stops updating
+- the app feels stuck after a crash or restart
+- another session needs a safe, known-good way to recover the environment
+
+### Known-good connection values
+
+Use these exact values unless the project was intentionally reconfigured:
+
+```text
+OpenCode backend URL: http://127.0.0.1:1656
+Web UI URL:          http://127.0.0.1:1657
+Username:            opencode
+Password:            opencode-demo-4096
+```
+
+### Full restart on this Linux setup
+
+Work from the project directory:
+
+```bash
+cd /root/codeharbor
+```
+
+#### Step 1: Stop old backend and frontend processes
+
+```bash
+pkill -f "opencode serve --hostname 0.0.0.0 --port 1656"
+pkill -f "vite --host 0.0.0.0 --port 1657"
+```
+
+It is fine if either command finds nothing.
+
+#### Step 2: Start the OpenCode backend
+
+```bash
+nohup env OPENCODE_SERVER_USERNAME=opencode OPENCODE_SERVER_PASSWORD=opencode-demo-4096 opencode serve --hostname 0.0.0.0 --port 1656 >/tmp/codeharbor-opencode.log 2>&1 </dev/null &
+```
+
+What this does:
+
+- starts OpenCode in the background
+- binds it to `1656`
+- keeps the expected username/password
+- writes logs to `/tmp/codeharbor-opencode.log`
+
+#### Step 3: Start the Web UI frontend
+
+Run this from `/root/codeharbor`:
+
+```bash
+nohup npm run dev -- --host 0.0.0.0 --port 1657 >/tmp/codeharbor-dev.log 2>&1 </dev/null &
+```
+
+What this does:
+
+- starts the Vite dev server in the background
+- binds it to `1657`
+- writes logs to `/tmp/codeharbor-dev.log`
+
+#### Step 4: Wait a few seconds
+
+The frontend usually takes a few seconds before `1657` is reachable.
+
+#### Step 5: Verify both ports are listening
+
+```bash
+ss -ltnp | grep -E '1656|1657'
+```
+
+Expected result should include both services:
+
+```text
+0.0.0.0:1656  opencode
+0.0.0.0:1657  node
+```
+
+If one of them is missing, do not guess. Read the related log file first.
+
+#### Step 6: Verify both services directly
+
+Check backend health:
+
+```bash
+curl -u opencode:opencode-demo-4096 http://127.0.0.1:1656/global/health
+```
+
+Expected: a successful response from OpenCode.
+
+Check frontend HTTP:
+
+```bash
+curl -I http://127.0.0.1:1657
+```
+
+Expected:
+
+```text
+HTTP/1.1 200 OK
+```
+
+#### Step 7: Open the browser and reconnect
+
+Open one of these:
+
+```text
+http://127.0.0.1:1657
+http://107.175.245.34:1657
+```
+
+Then connect with:
+
+```text
+Server URL: http://127.0.0.1:1656
+Username:   opencode
+Password:   opencode-demo-4096
+```
+
+### Fast copy-paste recovery block
+
+If another session already understands the setup and just needs the shortest reliable recovery sequence, use this block:
+
+```bash
+cd /root/codeharbor
+pkill -f "opencode serve --hostname 0.0.0.0 --port 1656"
+pkill -f "vite --host 0.0.0.0 --port 1657"
+nohup env OPENCODE_SERVER_USERNAME=opencode OPENCODE_SERVER_PASSWORD=opencode-demo-4096 opencode serve --hostname 0.0.0.0 --port 1656 >/tmp/codeharbor-opencode.log 2>&1 </dev/null &
+nohup npm run dev -- --host 0.0.0.0 --port 1657 >/tmp/codeharbor-dev.log 2>&1 </dev/null &
+sleep 5
+ss -ltnp | grep -E '1656|1657'
+curl -u opencode:opencode-demo-4096 http://127.0.0.1:1656/global/health
+curl -I http://127.0.0.1:1657
+```
+
+### Log files to inspect if restart fails
+
+Backend log:
+
+```text
+/tmp/codeharbor-opencode.log
+```
+
+Frontend log:
+
+```text
+/tmp/codeharbor-dev.log
+```
+
+Quick log inspection:
+
+```bash
+sed -n '1,120p' /tmp/codeharbor-opencode.log
+sed -n '1,120p' /tmp/codeharbor-dev.log
+```
+
+### Common pitfalls
+
+- If `1657` is down but `1656` is healthy, the browser page itself will fail even though OpenCode is alive.
+- If `1656` is down but `1657` is healthy, the page will open but connection inside the app will fail.
+- Always use `127.0.0.1:1656` in the UI, not `0.0.0.0:1656`.
+- Start the frontend from `/root/codeharbor`, not from another directory.
+- If the browser still shows stale state after a good restart, refresh the page manually.
+- If a session looks empty after a crash, reconnect and re-open the session before assuming data is gone.
+
+### Minimal diagnosis checklist for another session
+
+1. Confirm `1656` is listening.
+2. Confirm `1657` is listening.
+3. Confirm backend health on `127.0.0.1:1656` succeeds.
+4. Confirm frontend HTTP on `127.0.0.1:1657` returns `200 OK`.
+5. Open the browser and reconnect with the known-good credentials.
+6. If still broken, inspect `/tmp/codeharbor-opencode.log` and `/tmp/codeharbor-dev.log` before changing code.
+
+### Notes for other sessions
+
+- Backend log: `/tmp/codeharbor-opencode.log`
+- Frontend log: `/tmp/codeharbor-dev.log`
+- Backend port: `1656`
+- Frontend port: `1657`
+- Connection settings in the UI should stay:
+
+```text
+Server URL: http://127.0.0.1:1656
+Username:   opencode
+Password:   opencode-demo-4096
+```
+
 ## Project structure
 
 ```text
