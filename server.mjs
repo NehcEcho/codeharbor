@@ -59,11 +59,12 @@ async function proxyOpencodeRequest(req, res) {
     return;
   }
 
-  const targetUrl = `${trimTrailingSlash(targetBaseUrl)}${req.url}`;
+  const upstreamPath = req.url.startsWith(PROXY_PREFIX) ? req.url.slice(PROXY_PREFIX.length) || "/" : req.url;
+  const targetUrl = `${trimTrailingSlash(targetBaseUrl)}${upstreamPath}`;
 
   try {
     const method = req.method || "GET";
-    const wantsEventStream = (req.headers.accept || "").includes("text/event-stream") || req.url.startsWith(`${PROXY_PREFIX}/event`);
+    const wantsEventStream = (req.headers.accept || "").includes("text/event-stream") || upstreamPath.startsWith("/event");
     const body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(req);
     const response = await fetch(targetUrl, {
       method,
