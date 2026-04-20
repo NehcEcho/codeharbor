@@ -162,6 +162,48 @@ docker compose down
 
 More notes are in `DEPLOY.md`.
 
+## Systemd production startup
+
+For Linux servers, the recommended production setup is `systemd` with `root` services.
+
+### Services
+
+- `systemd/opencode.service`: starts OpenCode on port `1656`
+- `systemd/codeharbor.service`: serves the built app on port `1657`
+
+### Install
+
+```bash
+sudo cp /root/codeharbor/systemd/opencode.service /etc/systemd/system/
+sudo cp /root/codeharbor/systemd/codeharbor.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now opencode.service
+sudo systemctl enable --now codeharbor.service
+```
+
+### Stop
+
+```bash
+sudo systemctl stop codeharbor.service opencode.service
+```
+
+Or run the helper script:
+
+```bash
+chmod +x /root/codeharbor/systemd/stop-codeharbor.sh
+/root/codeharbor/systemd/stop-codeharbor.sh
+```
+
+### Rebuild after frontend changes
+
+`codeharbor.service` serves `dist/`, so rebuild after UI changes:
+
+```bash
+cd /root/codeharbor
+npm run build
+sudo systemctl restart codeharbor.service
+```
+
 ## Manual OpenCode startup
 
 If you do not want to use the bundled scripts, you can run OpenCode yourself:
