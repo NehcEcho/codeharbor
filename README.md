@@ -92,7 +92,7 @@ start-opencode-remote.cmd
 This uses the PowerShell helper script to:
 
 - start OpenCode on port `1656`
-- start the web UI on port `1657`
+- build and start the production web UI on port `1657`
 - open the browser
 
 Files involved:
@@ -131,7 +131,7 @@ Stop:
 The Linux launcher will:
 
 - start OpenCode on port `1656`
-- start the Vite web UI on port `1657`
+- build and start the production web UI on port `1657`
 - try to open a browser
 - stop both processes when you press Enter
 

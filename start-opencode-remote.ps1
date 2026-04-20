@@ -62,6 +62,18 @@ function Start-ManagedProcess {
   return Start-Process -FilePath $FilePath -ArgumentList $Arguments -WorkingDirectory $WorkingDirectory -PassThru -WindowStyle $WindowStyle
 }
 
+function Invoke-NpmCommand {
+  param(
+    [Parameter(Mandatory = $true)] [string] $Arguments,
+    [Parameter(Mandatory = $true)] [string] $WorkingDirectory
+  )
+
+  $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c npm $Arguments" -WorkingDirectory $WorkingDirectory -PassThru -WindowStyle Hidden -Wait
+  if ($process.ExitCode -ne 0) {
+    throw "npm $Arguments failed with exit code $($process.ExitCode)"
+  }
+}
+
 function Stop-AppPorts {
   $ports = @($serverPort, $webPort)
   $connections = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $ports -contains $_.LocalPort }
@@ -193,8 +205,12 @@ try {
   Write-Host "Waiting for OpenCode server on $serverUrl ..." -ForegroundColor DarkGray
   Wait-ForHttpOk -Url "$serverUrl/global/health" -Headers @{ Authorization = "Basic $basicAuth" } | Out-Null
 
+  Write-Host "Building web app..." -ForegroundColor Cyan
+  Invoke-NpmCommand -Arguments "run build" -WorkingDirectory $projectRoot
+
   Write-Host "Starting web app..." -ForegroundColor Cyan
-  $webProcess = Start-ManagedProcess -FilePath "cmd.exe" -Arguments "/c npm run dev -- --host 0.0.0.0 --port $webPort" -WorkingDirectory $projectRoot
+  $webCommand = "set HOST=0.0.0.0 && set PORT=$webPort && npm run start"
+  $webProcess = Start-ManagedProcess -FilePath "cmd.exe" -Arguments "/c $webCommand" -WorkingDirectory $projectRoot
   $processes += $webProcess
   Save-RuntimeState -Processes $processes -BrowserPath $browserPath -BrowserProfileDir $browserProfileDir
 

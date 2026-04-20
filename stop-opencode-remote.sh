@@ -29,6 +29,6 @@ PY
 fi
 
 pkill -f "opencode serve --hostname 0.0.0.0 --port 1656" >/dev/null 2>&1 || true
-pkill -f "vite --host 0.0.0.0 --port 1657" >/dev/null 2>&1 || true
+pkill -f "node server.mjs" >/dev/null 2>&1 || true
 
 echo "OpenCode Remote stopped."

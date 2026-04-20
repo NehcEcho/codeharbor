@@ -62,7 +62,7 @@ trap cleanup EXIT INT TERM
 AUTH_HEADER="Basic $(printf '%s' "${OPENCODE_SERVER_USERNAME}:${OPENCODE_SERVER_PASSWORD}" | base64 | tr -d '\n')"
 
 pkill -f "opencode serve --hostname 0.0.0.0 --port ${OPENCODE_SERVER_PORT}" >/dev/null 2>&1 || true
-pkill -f "vite --host 0.0.0.0 --port ${OPENCODE_WEB_PORT}" >/dev/null 2>&1 || true
+pkill -f "node server.mjs" >/dev/null 2>&1 || true
 
 OPENCODE_SERVER_USERNAME="$OPENCODE_SERVER_USERNAME" \
 OPENCODE_SERVER_PASSWORD="$OPENCODE_SERVER_PASSWORD" \
@@ -71,7 +71,9 @@ SERVER_PID=$!
 
 wait_for_http_ok "$SERVER_URL/global/health" "$AUTH_HEADER"
 
-npm run dev -- --host 0.0.0.0 --port "$OPENCODE_WEB_PORT" >/tmp/opencode-remote-web.log 2>&1 &
+npm run build >/tmp/opencode-remote-build.log 2>&1
+
+HOST="0.0.0.0" PORT="$OPENCODE_WEB_PORT" npm run start >/tmp/opencode-remote-web.log 2>&1 &
 WEB_PID=$!
 
 wait_for_http_ok "$WEB_URL"
