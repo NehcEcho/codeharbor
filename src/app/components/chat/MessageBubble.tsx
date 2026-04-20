@@ -254,7 +254,8 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
 
         {(isTool || toolParts.length > 0) &&
           toolParts.map((tool) => {
-            const isExpanded = expandedTools[tool.id] || tool.status !== "running";
+            const hasExplicitState = Object.prototype.hasOwnProperty.call(expandedTools, tool.id);
+            const isExpanded = hasExplicitState ? expandedTools[tool.id] : tool.status === "running";
             const isCompleted = tool.status === "completed";
             const isRunning = tool.status === "running" || tool.status === "pending";
 
