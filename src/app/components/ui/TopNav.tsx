@@ -1,9 +1,11 @@
-import { ActivityIcon, ChevronRightIcon, MenuIcon, SettingsIcon, TerminalIcon } from "./icons";
+import { ActivityIcon, ChevronRightIcon, MenuIcon, RefreshCwIcon, SettingsIcon, TerminalIcon } from "./icons";
 
 interface TopNavProps {
   isConnected: boolean;
   onMenuClick: () => void;
   onStatusClick: () => void;
+  onRefreshClick: () => void;
+  isRefreshing: boolean;
   onSettingsClick: () => void;
   serverLabel: string;
   sessionLabel: string;
@@ -13,6 +15,8 @@ export function TopNav({
   isConnected,
   onMenuClick,
   onStatusClick,
+  onRefreshClick,
+  isRefreshing,
   onSettingsClick,
   serverLabel,
   sessionLabel,
@@ -49,6 +53,16 @@ export function TopNav({
       <div className="flex items-center gap-3">
         {isConnected ? (
           <>
+            <button
+              onClick={onRefreshClick}
+              className="flex items-center gap-1.5 p-1.5 px-3 hover:bg-stone-100 rounded-md text-stone-600 transition-colors border border-transparent hover:border-stone-200/50 disabled:opacity-60"
+              type="button"
+              title="Refresh current session"
+              disabled={isRefreshing}
+            >
+              <RefreshCwIcon className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              <span className="text-xs hidden sm:inline-block">{isRefreshing ? "Refreshing" : "Refresh"}</span>
+            </button>
             <button
               onClick={onStatusClick}
               className="lg:hidden flex items-center gap-1.5 p-1.5 px-3 hover:bg-stone-100 rounded-md text-stone-600 transition-colors border border-transparent hover:border-stone-200/50"

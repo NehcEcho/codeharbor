@@ -186,6 +186,7 @@ function App() {
   const [draft, setDraft] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("build");
   const [isSending, setIsSending] = useState(false);
+  const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [diffCount, setDiffCount] = useState(0);
   const [events, setEvents] = useState<string[]>([]);
   const [sessionActivity, setSessionActivity] = useState<SessionActivityMap>({});
@@ -232,6 +233,19 @@ function App() {
     const diff = await opencodeApi.getDiff(config, selectedSessionId);
     setDiffCount(diff.length);
   }, [config, selectedSessionId]);
+
+  const handleRefreshCurrentSession = useCallback(async () => {
+    if (isRefreshingSession) return;
+
+    setIsRefreshingSession(true);
+    try {
+      await refreshSessions();
+      if (!selectedSessionId) return;
+      await Promise.all([refreshMessages(), refreshDiff()]);
+    } finally {
+      setIsRefreshingSession(false);
+    }
+  }, [isRefreshingSession, refreshDiff, refreshMessages, refreshSessions, selectedSessionId]);
 
   const handleConnect = useCallback(async () => {
     const normalized = {
@@ -581,6 +595,7 @@ function App() {
       draft={draft}
       agent={selectedAgent as "build" | "plan"}
       isSending={isSending}
+      isRefreshingSession={isRefreshingSession}
       isBusy={isSessionBusy}
       diffCount={diffCount}
       events={events}
@@ -589,6 +604,7 @@ function App() {
       onConnect={handleConnect}
       onSessionSelect={setSelectedSessionId}
       onCreateSession={handleCreateSession}
+      onRefreshCurrentSession={() => void handleRefreshCurrentSession()}
       onDraftChange={setDraft}
       onAgentChange={(value) => setSelectedAgent(value)}
       onSend={handleSend}

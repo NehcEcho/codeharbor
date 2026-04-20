@@ -27,6 +27,7 @@ export function MainLayout({
   draft,
   agent,
   isSending,
+  isRefreshingSession,
   isBusy,
   isStalled,
   diffCount,
@@ -35,6 +36,7 @@ export function MainLayout({
   onConnect,
   onSessionSelect,
   onCreateSession,
+  onRefreshCurrentSession,
   onDraftChange,
   onAgentChange,
   onSend,
@@ -54,6 +56,7 @@ export function MainLayout({
   draft: string;
   agent: "build" | "plan";
   isSending: boolean;
+  isRefreshingSession: boolean;
   isBusy: boolean;
   isStalled: boolean;
   diffCount: number;
@@ -62,6 +65,7 @@ export function MainLayout({
   onConnect: () => void;
   onSessionSelect: (sessionId: string) => void;
   onCreateSession: () => void;
+  onRefreshCurrentSession: () => void;
   onDraftChange: (value: string) => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
@@ -92,6 +96,8 @@ export function MainLayout({
         isConnected={isConnected}
         onMenuClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
         onStatusClick={() => setIsMobileStatusOpen(!isMobileStatusOpen)}
+        onRefreshClick={onRefreshCurrentSession}
+        isRefreshing={isRefreshingSession}
         onSettingsClick={() => {}}
         serverLabel={serverLabel}
         sessionLabel={selectedSession?.title || "No active session"}

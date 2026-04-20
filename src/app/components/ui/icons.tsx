@@ -35,6 +35,7 @@ export const MessageSquareIcon = resolveIcon("BotMessageSquare");
 export const PaperclipIcon = resolveIcon("Paperclip");
 export const PlusIcon = resolveIcon("Plus");
 export const SearchIcon = resolveIcon("Search");
+export const RefreshCwIcon = resolveIcon("RefreshCw");
 export const ServerIcon = resolveIcon("Server");
 export const SettingsIcon = resolveIcon("Settings");
 export const Settings2Icon = resolveIcon("Settings2");
