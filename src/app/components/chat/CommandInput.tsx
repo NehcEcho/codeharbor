@@ -16,6 +16,7 @@ interface CommandInputProps {
   agent: "build" | "plan";
   onAgentChange: (agent: "build" | "plan") => void;
   isSending: boolean;
+  queuedCount: number;
   isBusy: boolean;
 }
 
@@ -26,6 +27,7 @@ export function CommandInput({
   agent,
   onAgentChange,
   isSending,
+  queuedCount,
   isBusy,
 }: CommandInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -41,7 +43,7 @@ export function CommandInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (isSending || !value.trim()) return;
+      if (!value.trim()) return;
       onSend();
     }
   };
@@ -54,16 +56,18 @@ export function CommandInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={
-            isSending
-              ? "Sending message..."
-              : isBusy
-                ? "OpenCode is still working. You can keep typing or send another instruction if needed..."
-                : `Message OpenCode ${agent === "build" ? "(Build Mode)" : "(Plan Mode)"}...`
-          }
+            placeholder={
+              isSending
+                ? "Sending message..."
+                : queuedCount > 0
+                  ? `Queueing enabled. ${queuedCount} message${queuedCount === 1 ? "" : "s"} waiting...`
+                : isBusy
+                  ? "OpenCode is still working. You can keep typing or send another instruction if needed..."
+                  : `Message OpenCode ${agent === "build" ? "(Build Mode)" : "(Plan Mode)"}...`
+            }
           className="w-full bg-transparent px-4 py-4 min-h-[56px] max-h-[200px] resize-none focus:outline-none text-[15px] text-stone-800 placeholder-stone-400 font-sans leading-relaxed"
           rows={1}
-          disabled={isSending}
+          disabled={false}
         />
 
         <div className="flex items-center justify-between px-3 pb-3">
@@ -157,15 +161,15 @@ export function CommandInput({
 
           <button
             onClick={onSend}
-            disabled={!value.trim() || isSending}
+            disabled={!value.trim()}
             className={clsx(
               "p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center",
-              value.trim() && !isSending
+              value.trim()
                 ? "bg-stone-900 text-white hover:bg-stone-800 shadow-sm active:scale-95"
                 : "bg-stone-100 text-stone-400",
             )}
             type="button"
-            title={isSending ? "Sending message" : "Send message"}
+            title={isSending ? "Sending message" : queuedCount > 0 ? "Add message to queue" : "Send message"}
           >
             <ArrowUpIcon className="w-5 h-5" />
           </button>
@@ -173,8 +177,14 @@ export function CommandInput({
       </div>
 
       <div className="text-center mt-3 text-[11px] text-stone-400 font-medium tracking-wide flex items-center justify-center gap-1.5">
-        {isSending ? "Sending your message..." : isBusy ? "OpenCode is still working on the current task. You can keep drafting." : "OpenCode can read and modify your local environment. Press"}
-        {!isSending && !isBusy ? (
+        {isSending
+          ? "Sending your message..."
+          : queuedCount > 0
+            ? `${queuedCount} queued message${queuedCount === 1 ? "" : "s"} waiting for this session.`
+            : isBusy
+              ? "OpenCode is still working on the current task. New sends will be queued."
+              : "OpenCode can read and modify your local environment. Press"}
+        {!isSending && queuedCount === 0 && !isBusy ? (
           <>
         <kbd className="font-sans px-1.5 py-0.5 bg-stone-100 rounded border border-stone-200 shadow-sm ml-0.5 text-stone-500">
           Enter

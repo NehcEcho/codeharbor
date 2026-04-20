@@ -163,6 +163,20 @@ function upsertSession(current: Session[], nextSession: Session) {
 
 type SessionActivityMap = Record<string, { busySince?: number; lastActivityAt?: number }>;
 
+type QueuedMessage = {
+  id: string;
+  sessionId: string;
+  text: string;
+  agent: "build" | "plan";
+  optimisticMessageId: string;
+  createdAt: number;
+};
+
+type AwaitingSessionCompletion = {
+  sessionId: string;
+  seenBusy: boolean;
+};
+
 function markSessionActivity(current: SessionActivityMap, sessionID: string, timestamp = Date.now()) {
   const next = current[sessionID] || {};
   return {
@@ -190,6 +204,9 @@ function App() {
   const [diffCount, setDiffCount] = useState(0);
   const [events, setEvents] = useState<string[]>([]);
   const [sessionActivity, setSessionActivity] = useState<SessionActivityMap>({});
+  const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, QueuedMessage[]>>({});
+  const [dispatchingMessage, setDispatchingMessage] = useState<QueuedMessage | null>(null);
+  const [awaitingSessionCompletion, setAwaitingSessionCompletion] = useState<AwaitingSessionCompletion | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const refreshTimeoutRef = useRef<number | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -201,6 +218,8 @@ function App() {
 
   const selectedSessionStatus = selectedSessionId ? statusMap[selectedSessionId] : undefined;
   const isSessionBusy = selectedSessionStatus === "busy";
+  const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
+  const queuedCount = queuedMessages.length;
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
   const isSessionStalled = Boolean(
     isSessionBusy &&
@@ -290,35 +309,127 @@ function App() {
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
-    if (!selectedSessionId || !text || isSending) return;
+    if (!selectedSessionId || !text) return;
+
+    const now = Date.now();
+    const optimisticMessageId = `local-${now}`;
+    const queueItem: QueuedMessage = {
+      id: `queue-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionId: selectedSessionId,
+      text,
+      agent: selectedAgent as "build" | "plan",
+      optimisticMessageId,
+      createdAt: now,
+    };
 
     const optimisticMessage: ChatMessage = {
-      id: `local-${Date.now()}`,
+      id: optimisticMessageId,
       role: "user",
       parts: [{ type: "text", text }],
       timestampLabel: formatTimestamp(),
       isPending: true,
     };
 
-    setIsSending(true);
+    setQueuedMessagesBySession((current) => ({
+      ...current,
+      [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
+    }));
     setMessages((current) => [...current, optimisticMessage]);
     setDraft("");
+    setEvents((current) => {
+      const queueSize = queuedCount + 1;
+      const label = queueSize > 1 ? `Queued message ${queueSize} for session` : "Queued message for session";
+      return [label, ...current].slice(0, 20);
+    });
+  }, [draft, queuedCount, selectedAgent, selectedSessionId]);
 
-    try {
-      await opencodeApi.sendMessage(config, selectedSessionId, {
-        agent: selectedAgent,
-        parts: [{ type: "text", text }],
+  const dispatchQueuedMessage = useCallback(
+    async (item: QueuedMessage) => {
+      setDispatchingMessage(item);
+      setIsSending(item.sessionId === selectedSessionId);
+
+      try {
+        await opencodeApi.sendMessage(config, item.sessionId, {
+          agent: item.agent,
+          parts: [{ type: "text", text: item.text }],
+        });
+
+        setQueuedMessagesBySession((current) => {
+          const sessionQueue = current[item.sessionId] || [];
+          const nextSessionQueue = sessionQueue.filter((queued) => queued.id !== item.id);
+
+          if (nextSessionQueue.length === 0) {
+            const { [item.sessionId]: _removed, ...rest } = current;
+            return rest;
+          }
+
+          return { ...current, [item.sessionId]: nextSessionQueue };
+        });
+        setAwaitingSessionCompletion({ sessionId: item.sessionId, seenBusy: false });
+        setEvents((current) => [`Sent queued message - ${item.agent}`, ...current].slice(0, 20));
+
+        void refreshSessions();
+        if (item.sessionId === selectedSessionId) {
+          void refreshMessages();
+          void refreshDiff();
+        }
+      } catch (error) {
+        setQueuedMessagesBySession((current) => {
+          const sessionQueue = current[item.sessionId] || [];
+          const nextSessionQueue = sessionQueue.filter((queued) => queued.id !== item.id);
+
+          if (nextSessionQueue.length === 0) {
+            const { [item.sessionId]: _removed, ...rest } = current;
+            return rest;
+          }
+
+          return { ...current, [item.sessionId]: nextSessionQueue };
+        });
+        if (item.sessionId === selectedSessionId) {
+          setMessages((current) => current.filter((message) => message.id !== item.optimisticMessageId));
+        }
+        const message = error instanceof Error ? error.message : "send failed";
+        setEvents((current) => [`Queued send failed - ${message}`, ...current].slice(0, 20));
+      } finally {
+        setDispatchingMessage((current) => (current?.id === item.id ? null : current));
+        if (item.sessionId === selectedSessionId) {
+          setIsSending(false);
+        }
+      }
+    },
+    [config, refreshDiff, refreshMessages, refreshSessions, selectedSessionId],
+  );
+
+  useEffect(() => {
+    if (dispatchingMessage || awaitingSessionCompletion) return;
+
+    const nextMessage = Object.values(queuedMessagesBySession)
+      .map((queue) => queue[0])
+      .filter((message): message is QueuedMessage => Boolean(message))
+      .filter((message) => statusMap[message.sessionId] !== "busy")
+      .sort((left, right) => left.createdAt - right.createdAt)[0];
+
+    if (!nextMessage) return;
+
+    void dispatchQueuedMessage(nextMessage);
+  }, [awaitingSessionCompletion, dispatchQueuedMessage, dispatchingMessage, queuedMessagesBySession, statusMap]);
+
+  useEffect(() => {
+    if (!awaitingSessionCompletion) return;
+
+    const nextStatus = statusMap[awaitingSessionCompletion.sessionId];
+    if (nextStatus === "busy" && !awaitingSessionCompletion.seenBusy) {
+      setAwaitingSessionCompletion({
+        sessionId: awaitingSessionCompletion.sessionId,
+        seenBusy: true,
       });
-      void refreshMessages();
-      void refreshSessions();
-    } catch (error) {
-      setMessages((current) => current.filter((message) => message.id !== optimisticMessage.id));
-      const message = error instanceof Error ? error.message : "send failed";
-      setEvents((current) => [`Send failed - ${message}`, ...current].slice(0, 20));
-    } finally {
-      setIsSending(false);
+      return;
     }
-  }, [config, draft, isSending, refreshDiff, refreshMessages, refreshSessions, selectedAgent, selectedSessionId]);
+
+    if (awaitingSessionCompletion.seenBusy && nextStatus && nextStatus !== "busy") {
+      setAwaitingSessionCompletion(null);
+    }
+  }, [awaitingSessionCompletion, statusMap]);
 
   const handlePermissionAction = useCallback(
     async (id: string, action: "approved" | "denied") => {
@@ -479,6 +590,14 @@ function App() {
                 if (sessionID === selectedSessionId && status.message) {
                   setEvents((current) => [`${status.type} - ${status.message}`, ...current].slice(0, 20));
                 }
+
+                setAwaitingSessionCompletion((current) => {
+                  if (!current || current.sessionId !== sessionID) return current;
+                  if (nextStatus === "busy") {
+                    return { ...current, seenBusy: true };
+                  }
+                  return current.seenBusy ? null : current;
+                });
               }
             }
 
@@ -496,6 +615,13 @@ function App() {
             });
 
             if (payloadType === "session.idle") {
+              const sessionID = properties.sessionID as string | undefined;
+              if (sessionID) {
+                setStatusMap((current) => ({ ...current, [sessionID]: "idle" }));
+                setAwaitingSessionCompletion((current) =>
+                  current?.sessionId === sessionID && current.seenBusy ? null : current,
+                );
+              }
               scheduleRefresh();
             }
           },
@@ -595,6 +721,7 @@ function App() {
       draft={draft}
       agent={selectedAgent as "build" | "plan"}
       isSending={isSending}
+      queuedCount={queuedCount}
       isRefreshingSession={isRefreshingSession}
       isBusy={isSessionBusy}
       diffCount={diffCount}

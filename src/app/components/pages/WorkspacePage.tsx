@@ -10,6 +10,7 @@ export function WorkspacePage({
   draft,
   agent,
   isSending,
+  queuedCount,
   isBusy,
   isStalled,
   onDraftChange,
@@ -24,6 +25,7 @@ export function WorkspacePage({
   draft: string;
   agent: "build" | "plan";
   isSending: boolean;
+  queuedCount: number;
   isBusy: boolean;
   isStalled: boolean;
   onDraftChange: (value: string) => void;
@@ -130,11 +132,12 @@ export function WorkspacePage({
             value={draft}
             onChange={onDraftChange}
             onSend={onSend}
-            agent={agent}
-            onAgentChange={onAgentChange}
-            isSending={isSending}
-            isBusy={isBusy}
-          />
+                agent={agent}
+                onAgentChange={onAgentChange}
+                isSending={isSending}
+                queuedCount={queuedCount}
+                isBusy={isBusy}
+              />
         </div>
       </div>
     </div>

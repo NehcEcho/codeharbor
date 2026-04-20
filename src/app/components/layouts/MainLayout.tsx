@@ -27,6 +27,7 @@ export function MainLayout({
   draft,
   agent,
   isSending,
+  queuedCount,
   isRefreshingSession,
   isBusy,
   isStalled,
@@ -56,6 +57,7 @@ export function MainLayout({
   draft: string;
   agent: "build" | "plan";
   isSending: boolean;
+  queuedCount: number;
   isRefreshingSession: boolean;
   isBusy: boolean;
   isStalled: boolean;
@@ -155,6 +157,7 @@ export function MainLayout({
                 draft={draft}
                 agent={agent}
                 isSending={isSending}
+                queuedCount={queuedCount}
                 isBusy={isBusy}
                 isStalled={isStalled}
                 onDraftChange={onDraftChange}
