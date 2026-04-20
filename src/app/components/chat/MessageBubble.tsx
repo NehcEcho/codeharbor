@@ -16,6 +16,10 @@ type ContentSection =
   | { type: "text"; value: string }
   | { type: "collapsible"; children: ContentSection[] };
 
+type TextSegment =
+  | { type: "text"; value: string }
+  | { type: "code"; value: string; language: string };
+
 function extractBody(message: ChatMessage) {
   if (message.role === "permission") return "";
   return message.parts
@@ -92,11 +96,103 @@ function flattenContentSections(sections: ContentSection[]): string {
     .trim();
 }
 
+function parseTextSegments(content: string, allowOpenCodeBlock: boolean): TextSegment[] {
+  if (!content.trim()) return [];
+
+  const fencePattern = /```([^\n`]*)\n/g;
+  const segments: TextSegment[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = fencePattern.exec(content)) !== null) {
+    const fenceStart = match.index;
+    const blockStart = fencePattern.lastIndex;
+    const closingFence = content.indexOf("\n```", blockStart);
+
+    if (fenceStart > cursor) {
+      segments.push({ type: "text", value: content.slice(cursor, fenceStart) });
+    }
+
+    if (closingFence >= 0) {
+      segments.push({
+        type: "code",
+        language: match[1].trim(),
+        value: content.slice(blockStart, closingFence),
+      });
+      cursor = closingFence + 4;
+      fencePattern.lastIndex = cursor;
+      continue;
+    }
+
+    if (allowOpenCodeBlock) {
+      segments.push({
+        type: "code",
+        language: match[1].trim(),
+        value: content.slice(blockStart),
+      });
+      cursor = content.length;
+    } else {
+      segments.push({ type: "text", value: content.slice(fenceStart) });
+      cursor = content.length;
+    }
+
+    break;
+  }
+
+  if (cursor < content.length) {
+    segments.push({ type: "text", value: content.slice(cursor) });
+  }
+
+  return segments.filter((segment) => segment.value.length > 0);
+}
+
+function renderTextSegments(content: string, allowOpenCodeBlock: boolean, highlightLastCodeBlock: boolean) {
+  const segments = parseTextSegments(content, allowOpenCodeBlock);
+  const lastCodeIndex = [...segments].reverse().findIndex((segment) => segment.type === "code");
+  const lastCodeSegmentIndex = lastCodeIndex < 0 ? -1 : segments.length - 1 - lastCodeIndex;
+
+  return segments.map((segment, index) => {
+    if (segment.type === "code") {
+      const isHighlightedCode = highlightLastCodeBlock && index === lastCodeSegmentIndex;
+
+      return (
+        <div
+          key={`code-${index}`}
+          className={clsx(
+            "overflow-hidden rounded-xl border",
+            isHighlightedCode ? "border-emerald-300 bg-[#1A1A1A] shadow-[0_0_0_1px_rgba(16,185,129,0.15)]" : "border-stone-200 bg-[#1A1A1A]",
+          )}
+        >
+          {segment.language ? (
+            <div className="border-b border-stone-800 bg-stone-950/40 px-4 py-2 text-[11px] font-mono uppercase tracking-wide text-stone-400">
+              {segment.language}
+            </div>
+          ) : null}
+          <pre className="m-0 overflow-x-auto p-4 text-sm leading-relaxed text-stone-200">
+            <code>{segment.value}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={`text-${index}`}
+        className="text-[15px] text-stone-700 leading-relaxed font-sans max-w-none whitespace-pre-wrap"
+      >
+        {segment.value}
+      </div>
+    );
+  });
+}
+
 function renderContentSections({
   sections,
   messageId,
   expandedContent,
   setExpandedContent,
+  allowOpenCodeBlock,
+  highlightLastTopLevelCollapsible,
   depth = 0,
   pathPrefix = "content",
 }: {
@@ -104,43 +200,57 @@ function renderContentSections({
   messageId: string;
   expandedContent: Record<string, boolean>;
   setExpandedContent: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  allowOpenCodeBlock: boolean;
+  highlightLastTopLevelCollapsible: boolean;
   depth?: number;
   pathPrefix?: string;
 }) {
   return sections.map((section, index) => {
     if (section.type === "text") {
+      const isLastTopLevelText = depth === 0 && index === sections.length - 1;
       return (
-        <div
-          key={`${pathPrefix}-text-${index}`}
-          className="text-[15px] text-stone-700 leading-relaxed font-sans max-w-none whitespace-pre-wrap"
-        >
-          {section.value}
+        <div key={`${pathPrefix}-text-${index}`} className="space-y-4">
+          {renderTextSegments(section.value, allowOpenCodeBlock && isLastTopLevelText, allowOpenCodeBlock && isLastTopLevelText)}
         </div>
       );
     }
 
     const sectionId = `${messageId}-${pathPrefix}-${index}`;
     const isExpanded = expandedContent[sectionId] || false;
+    const isHighlightedCollapsible = highlightLastTopLevelCollapsible && depth === 0 && index === sections.length - 1;
 
     return (
       <div
         key={sectionId}
         className={clsx(
-          "rounded-xl border border-stone-200 overflow-hidden bg-stone-50/60",
+          "rounded-xl border overflow-hidden",
+          isHighlightedCollapsible
+            ? "border-amber-200 bg-amber-50/70"
+            : "border-stone-200 bg-stone-50/60",
           depth > 0 && "mt-3 ml-4",
         )}
       >
         <button
           onClick={() => setExpandedContent((current) => ({ ...current, [sectionId]: !isExpanded }))}
-          className="w-full flex items-center gap-3 p-3 text-left hover:bg-stone-100/60 transition-colors"
+          className={clsx(
+            "w-full flex items-center gap-3 p-3 text-left transition-colors",
+            isHighlightedCollapsible ? "hover:bg-amber-100/70" : "hover:bg-stone-100/60",
+          )}
           type="button"
         >
-          <div className="text-stone-400">
+          <div className={clsx(isHighlightedCollapsible ? "text-amber-500" : "text-stone-400")}>
             {isExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-stone-800">Step details</div>
-            <div className="text-xs text-stone-500 mt-1">Nested step block</div>
+            <div className="flex items-center gap-2">
+              <div className={clsx("text-sm font-medium", isHighlightedCollapsible ? "text-amber-900" : "text-stone-800")}>Step details</div>
+              {isHighlightedCollapsible ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium tracking-normal text-emerald-700">
+                  <CheckCircleIcon className="h-3 w-3" /> Last block
+                </span>
+              ) : null}
+            </div>
+            <div className={clsx("text-xs mt-1", isHighlightedCollapsible ? "text-amber-700" : "text-stone-500")}>Nested step block</div>
           </div>
         </button>
 
@@ -150,7 +260,10 @@ function renderContentSections({
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="border-t border-stone-200 bg-white"
+              className={clsx(
+                "border-t",
+                isHighlightedCollapsible ? "border-amber-200 bg-amber-50/40" : "border-stone-200 bg-white",
+              )}
             >
               <div className="p-4 space-y-3">
                 {renderContentSections({
@@ -158,6 +271,8 @@ function renderContentSections({
                   messageId,
                   expandedContent,
                   setExpandedContent,
+                  allowOpenCodeBlock: false,
+                  highlightLastTopLevelCollapsible: false,
                   depth: depth + 1,
                   pathPrefix: `${pathPrefix}-${index}`,
                 })}
@@ -206,7 +321,7 @@ function extractToolParts(message: ChatMessage) {
     });
 }
 
-export function MessageBubble({ message }: { message: ChatMessage }) {
+export function MessageBubble({ message, isLatest = false }: { message: ChatMessage; isLatest?: boolean }) {
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
@@ -250,6 +365,8 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           messageId: message.id,
           expandedContent,
           setExpandedContent,
+          allowOpenCodeBlock: isLatest && !isUser && !isTool,
+          highlightLastTopLevelCollapsible: isLatest && !isUser && !isTool,
         })}
 
         {(isTool || toolParts.length > 0) &&

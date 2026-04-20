@@ -10,6 +10,8 @@ export function MessageFeed({
   messages: ChatMessage[];
   onPermissionAction: (id: string, action: "approved" | "denied") => void;
 }) {
+  const lastMessageId = [...messages].reverse().find((message) => message.role !== "permission")?.id;
+
   return (
     <div className="space-y-8 min-h-0">
       <AnimatePresence initial={false}>
@@ -24,7 +26,7 @@ export function MessageFeed({
             {message.role === "permission" ? (
               <PermissionCard message={message} onAction={(action) => onPermissionAction(message.id, action)} />
             ) : (
-              <MessageBubble message={message} />
+              <MessageBubble message={message} isLatest={message.id === lastMessageId} />
             )}
           </motion.div>
         ))}
