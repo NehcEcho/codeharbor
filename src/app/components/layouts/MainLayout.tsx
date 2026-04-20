@@ -3,11 +3,14 @@ import { AnimatePresence, motion } from "motion/react";
 import { TopNav } from "../ui/TopNav";
 import { SessionSidebar } from "../ui/SessionSidebar";
 import { StatusPanel } from "../ui/StatusPanel";
+import { SettingsPanel } from "../ui/SettingsPanel";
 import { ConnectPage } from "../pages/ConnectPage";
 import { WorkspacePage } from "../pages/WorkspacePage";
 import type {
   ChatMessage,
   ConnectionState,
+  PermissionRequest,
+  QuestionRequest,
   ServerConfig,
   Session,
   SessionStatusMap,
@@ -33,6 +36,8 @@ export function MainLayout({
   isStalled,
   diffCount,
   events,
+  permissionRequests,
+  questionRequests,
   onConfigChange,
   onConnect,
   onSessionSelect,
@@ -43,6 +48,9 @@ export function MainLayout({
   onSend,
   onRefreshDiff,
   onPermissionAction,
+  respondingPermissionId,
+  onQuestionReply,
+  onQuestionReject,
 }: {
   isConnected: boolean;
   config: ServerConfig;
@@ -63,6 +71,8 @@ export function MainLayout({
   isStalled: boolean;
   diffCount: number;
   events: string[];
+  permissionRequests: PermissionRequest[];
+  questionRequests: QuestionRequest[];
   onConfigChange: (next: ServerConfig) => void;
   onConnect: () => void;
   onSessionSelect: (sessionId: string) => void;
@@ -72,25 +82,30 @@ export function MainLayout({
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
   onRefreshDiff: () => void;
-  onPermissionAction: (id: string, action: "approved" | "denied") => void;
+  onPermissionAction: (id: string, action: "once" | "always" | "reject") => Promise<void>;
+  respondingPermissionId: string | null;
+  onQuestionReply: (id: string, answers: string[][]) => Promise<void>;
+  onQuestionReject: (id: string) => Promise<void>;
 }) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobileStatusOpen, setIsMobileStatusOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     setIsMobileSidebarOpen(false);
     setIsMobileStatusOpen(false);
   }, [selectedSessionId, isConnected]);
 
+  useEffect(() => {
+    if (!isConnected) {
+      setIsSettingsOpen(false);
+    }
+  }, [isConnected]);
+
   const serverLabel = useMemo(() => {
     if (!config.baseUrl) return "OpenCode server";
     return config.baseUrl.replace(/^https?:\/\//, "");
   }, [config.baseUrl]);
-
-  const permissionMessages = useMemo(
-    () => messages.filter((message) => message.role === "permission" && message.status !== "approved" && message.status !== "denied"),
-    [messages],
-  );
 
   return (
     <div className="flex h-screen flex-col bg-[#FCFCFA] text-stone-800 font-sans overflow-hidden selection:bg-stone-200 selection:text-stone-900">
@@ -100,10 +115,16 @@ export function MainLayout({
         onStatusClick={() => setIsMobileStatusOpen(!isMobileStatusOpen)}
         onRefreshClick={onRefreshCurrentSession}
         isRefreshing={isRefreshingSession}
-        onSettingsClick={() => {}}
+        onSettingsClick={() => setIsSettingsOpen((current) => !current)}
         serverLabel={serverLabel}
         sessionLabel={selectedSession?.title || "No active session"}
       />
+
+      <AnimatePresence>
+        {isConnected && isSettingsOpen ? (
+          <SettingsPanel config={config} onConfigChange={onConfigChange} onClose={() => setIsSettingsOpen(false)} />
+        ) : null}
+      </AnimatePresence>
 
       <div className="flex flex-1 overflow-hidden relative">
         {isConnected ? (
@@ -163,9 +184,8 @@ export function MainLayout({
                 onDraftChange={onDraftChange}
                 onAgentChange={onAgentChange}
                 onSend={onSend}
-                onPermissionAction={onPermissionAction}
                 serverLabel={serverLabel}
-                hasSidePanel={permissionMessages.length > 0}
+                hasSidePanel={permissionRequests.length > 0 || questionRequests.length > 0}
               />
           ) : (
             <ConnectPage
@@ -182,7 +202,14 @@ export function MainLayout({
         {isConnected ? (
           <>
             <div className="hidden lg:block w-80 border-l border-stone-200/60 bg-[#FAFAEE]/30 flex-shrink-0">
-              <StatusPanel permissionMessages={permissionMessages} onPermissionAction={onPermissionAction} />
+              <StatusPanel
+                permissionRequests={permissionRequests}
+                questionRequests={questionRequests}
+                respondingPermissionId={respondingPermissionId}
+                onPermissionAction={onPermissionAction}
+                onQuestionReply={onQuestionReply}
+                onQuestionReject={onQuestionReject}
+              />
             </div>
 
             <AnimatePresence>
@@ -202,7 +229,14 @@ export function MainLayout({
                     transition={{ type: "spring", damping: 25, stiffness: 200 }}
                     className="fixed inset-y-0 right-0 w-80 bg-[#FCFCFA] border-l border-stone-200 z-50 lg:hidden flex flex-col pt-14"
                   >
-                    <StatusPanel permissionMessages={permissionMessages} onPermissionAction={onPermissionAction} />
+                    <StatusPanel
+                      permissionRequests={permissionRequests}
+                      questionRequests={questionRequests}
+                      respondingPermissionId={respondingPermissionId}
+                      onPermissionAction={onPermissionAction}
+                      onQuestionReply={onQuestionReply}
+                      onQuestionReject={onQuestionReject}
+                    />
                   </motion.div>
                 </>
               ) : null}

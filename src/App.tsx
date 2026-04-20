@@ -6,6 +6,8 @@ import type {
   ChatMessage,
   ConnectionState,
   MessageEnvelope,
+  PermissionRequest,
+  QuestionRequest,
   ServerConfig,
   Session,
   SessionStatusMap,
@@ -161,6 +163,34 @@ function upsertSession(current: Session[], nextSession: Session) {
   return [...next].sort((left, right) => (right.time?.updated || 0) - (left.time?.updated || 0));
 }
 
+function upsertQuestionRequest(current: QuestionRequest[], nextRequest: QuestionRequest) {
+  const existingIndex = current.findIndex((item) => item.id === nextRequest.id);
+  if (existingIndex >= 0) {
+    const next = [...current];
+    next[existingIndex] = nextRequest;
+    return next;
+  }
+  return [...current, nextRequest].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function removeQuestionRequest(current: QuestionRequest[], requestId: string) {
+  return current.filter((item) => item.id !== requestId);
+}
+
+function upsertPermissionRequest(current: PermissionRequest[], nextRequest: PermissionRequest) {
+  const existingIndex = current.findIndex((item) => item.id === nextRequest.id);
+  if (existingIndex >= 0) {
+    const next = [...current];
+    next[existingIndex] = nextRequest;
+    return next;
+  }
+  return [...current, nextRequest].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function removePermissionRequest(current: PermissionRequest[], requestId: string) {
+  return current.filter((item) => item.id !== requestId);
+}
+
 type SessionActivityMap = Record<string, { busySince?: number; lastActivityAt?: number }>;
 
 type QueuedMessage = {
@@ -168,6 +198,7 @@ type QueuedMessage = {
   sessionId: string;
   text: string;
   agent: "build" | "plan";
+  model: string;
   optimisticMessageId: string;
   createdAt: number;
 };
@@ -204,6 +235,9 @@ function App() {
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [diffCount, setDiffCount] = useState(0);
   const [events, setEvents] = useState<string[]>([]);
+  const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
+  const [respondingPermissionId, setRespondingPermissionId] = useState<string | null>(null);
+  const [questionRequests, setQuestionRequests] = useState<QuestionRequest[]>([]);
   const [sessionActivity, setSessionActivity] = useState<SessionActivityMap>({});
   const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, QueuedMessage[]>>({});
   const [dispatchingMessage, setDispatchingMessage] = useState<QueuedMessage | null>(null);
@@ -254,6 +288,18 @@ function App() {
     setDiffCount(diff.length);
   }, [config, selectedSessionId]);
 
+  const refreshQuestions = useCallback(async () => {
+    if (!selectedSessionId) return;
+    const requests = await opencodeApi.listQuestions(config);
+    setQuestionRequests(requests.filter((item) => item.sessionID === selectedSessionId));
+  }, [config, selectedSessionId]);
+
+  const refreshPermissions = useCallback(async () => {
+    if (!selectedSessionId) return;
+    const requests = await opencodeApi.listPermissions(config);
+    setPermissionRequests(requests.filter((item) => item.sessionID === selectedSessionId));
+  }, [config, selectedSessionId]);
+
   const handleRefreshCurrentSession = useCallback(async () => {
     if (isRefreshingSession) return;
 
@@ -261,11 +307,11 @@ function App() {
     try {
       await refreshSessions();
       if (!selectedSessionId) return;
-      await Promise.all([refreshMessages(), refreshDiff()]);
+      await Promise.all([refreshMessages(), refreshDiff(), refreshQuestions(), refreshPermissions()]);
     } finally {
       setIsRefreshingSession(false);
     }
-  }, [isRefreshingSession, refreshDiff, refreshMessages, refreshSessions, selectedSessionId]);
+  }, [isRefreshingSession, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
 
   const handleConnect = useCallback(async () => {
     const normalized = {
@@ -319,6 +365,7 @@ function App() {
       sessionId: selectedSessionId,
       text,
       agent: selectedAgent as "build" | "plan",
+      model: config.model,
       optimisticMessageId,
       createdAt: now,
     };
@@ -342,7 +389,7 @@ function App() {
       const label = queueSize > 1 ? `Queued message ${queueSize} for session` : "Queued message for session";
       return [label, ...current].slice(0, 20);
     });
-  }, [draft, queuedCount, selectedAgent, selectedSessionId]);
+  }, [config.model, draft, queuedCount, selectedAgent, selectedSessionId]);
 
   const dispatchQueuedMessage = useCallback(
     async (item: QueuedMessage) => {
@@ -352,6 +399,7 @@ function App() {
       try {
         await opencodeApi.sendMessage(config, item.sessionId, {
           agent: item.agent,
+          model: item.model || undefined,
           parts: [{ type: "text", text: item.text }],
         });
 
@@ -452,30 +500,39 @@ function App() {
   }, [awaitingSessionCompletion]);
 
   const handlePermissionAction = useCallback(
-    async (id: string, action: "approved" | "denied") => {
-      if (!selectedSessionId) return;
-
-      setMessages((current) =>
-        current.map((message) => (message.id === id ? { ...message, status: action } : message)),
-      );
+    async (id: string, action: "once" | "always" | "reject") => {
+      setRespondingPermissionId(id);
 
       try {
-        await opencodeApi.respondPermission(
-          config,
-          selectedSessionId,
-          id,
-          action === "approved" ? "allow" : "deny",
-        );
-        await Promise.all([refreshMessages(), refreshSessions(), refreshDiff()]);
+        await opencodeApi.replyPermission(config, id, action);
+        setPermissionRequests((current) => removePermissionRequest(current, id));
+        await Promise.all([refreshMessages(), refreshSessions(), refreshDiff(), refreshPermissions()]);
       } catch (error) {
-        setMessages((current) =>
-          current.map((message) => (message.id === id ? { ...message, status: "pending" } : message)),
-        );
         const message = error instanceof Error ? error.message : "permission response failed";
         setEvents((current) => [`Permission action failed - ${message}`, ...current].slice(0, 20));
+      } finally {
+        setRespondingPermissionId((current) => (current === id ? null : current));
       }
     },
-    [config, refreshDiff, refreshMessages, refreshSessions, selectedSessionId],
+    [config, refreshDiff, refreshMessages, refreshPermissions, refreshSessions],
+  );
+
+  const handleQuestionReply = useCallback(
+    async (id: string, answers: string[][]) => {
+      await opencodeApi.replyQuestion(config, id, answers);
+      setQuestionRequests((current) => removeQuestionRequest(current, id));
+      await Promise.all([refreshMessages(), refreshSessions(), refreshDiff(), refreshQuestions()]);
+    },
+    [config, refreshDiff, refreshMessages, refreshQuestions, refreshSessions],
+  );
+
+  const handleQuestionReject = useCallback(
+    async (id: string) => {
+      await opencodeApi.rejectQuestion(config, id);
+      setQuestionRequests((current) => removeQuestionRequest(current, id));
+      await Promise.all([refreshMessages(), refreshSessions(), refreshDiff(), refreshQuestions()]);
+    },
+    [config, refreshDiff, refreshMessages, refreshQuestions, refreshSessions],
   );
 
   useEffect(() => {
@@ -487,12 +544,16 @@ function App() {
     if (!selectedSessionId) {
       setMessages([]);
       setDiffCount(0);
+      setPermissionRequests([]);
+      setQuestionRequests([]);
       return;
     }
 
     void refreshMessages();
     void refreshDiff();
-  }, [refreshDiff, refreshMessages, selectedSessionId]);
+    void refreshPermissions();
+    void refreshQuestions();
+  }, [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, selectedSessionId]);
 
   useEffect(() => {
     if (connectionState !== "success" || !config.password) return;
@@ -517,6 +578,8 @@ function App() {
         if (selectedSessionId) {
           void refreshMessages();
           void refreshDiff();
+          void refreshPermissions();
+          void refreshQuestions();
         }
       }, 250);
     };
@@ -579,6 +642,50 @@ function App() {
               if (info?.id) {
                 setSessions((current) => upsertSession(current, info));
               }
+            }
+
+            if (payloadType === "question.asked") {
+              const request = properties as QuestionRequest;
+              if (request.sessionID === selectedSessionId) {
+                setQuestionRequests((current) => upsertQuestionRequest(current, request));
+              }
+              if (request.sessionID) {
+                setSessionActivity((current) => markSessionActivity(current, request.sessionID));
+              }
+            }
+
+            if (payloadType === "permission.asked") {
+              const request = properties as PermissionRequest;
+              if (request.sessionID === selectedSessionId) {
+                setPermissionRequests((current) => upsertPermissionRequest(current, request));
+              }
+              if (request.sessionID) {
+                setSessionActivity((current) => markSessionActivity(current, request.sessionID));
+              }
+            }
+
+            if (payloadType === "permission.replied") {
+              const sessionID = properties.sessionID as string | undefined;
+              const requestID = properties.requestID as string | undefined;
+              if (sessionID === selectedSessionId && requestID) {
+                setPermissionRequests((current) => removePermissionRequest(current, requestID));
+              }
+              if (sessionID) {
+                setSessionActivity((current) => markSessionActivity(current, sessionID));
+              }
+              scheduleRefresh();
+            }
+
+            if (payloadType === "question.replied" || payloadType === "question.rejected") {
+              const sessionID = properties.sessionID as string | undefined;
+              const requestID = properties.requestID as string | undefined;
+              if (sessionID === selectedSessionId && requestID) {
+                setQuestionRequests((current) => removeQuestionRequest(current, requestID));
+              }
+              if (sessionID) {
+                setSessionActivity((current) => markSessionActivity(current, sessionID));
+              }
+              scheduleRefresh();
             }
 
             if (payloadType === "session.status") {
@@ -657,6 +764,8 @@ function App() {
             if (selectedSessionId) {
               void refreshMessages();
               void refreshDiff();
+              void refreshPermissions();
+              void refreshQuestions();
             }
             connectStream();
           }, 1500);
@@ -674,7 +783,7 @@ function App() {
         refreshTimeoutRef.current = null;
       }
     };
-  }, [config, connectionState, refreshDiff, refreshMessages, refreshSessions, selectedSessionId]);
+  }, [config, connectionState, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
 
   useEffect(() => {
     if (!selectedSessionId || !config.password || !isSessionBusy) return;
@@ -683,10 +792,12 @@ function App() {
       void refreshMessages();
       void refreshDiff();
       void refreshSessions();
+      void refreshPermissions();
+      void refreshQuestions();
     }, 3000);
 
     return () => window.clearInterval(interval);
-  }, [config.password, isSessionBusy, refreshDiff, refreshMessages, refreshSessions, selectedSessionId]);
+  }, [config.password, isSessionBusy, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
 
   useEffect(() => {
     if (!config.password) return;
@@ -746,6 +857,8 @@ function App() {
       isBusy={isSessionBusy}
       diffCount={diffCount}
       events={events}
+      permissionRequests={permissionRequests}
+      questionRequests={questionRequests}
       isStalled={isSessionStalled}
       onConfigChange={setConfig}
       onConnect={handleConnect}
@@ -756,7 +869,10 @@ function App() {
       onAgentChange={(value) => setSelectedAgent(value)}
       onSend={handleSend}
       onRefreshDiff={() => void refreshDiff()}
+      respondingPermissionId={respondingPermissionId}
       onPermissionAction={handlePermissionAction}
+      onQuestionReply={handleQuestionReply}
+      onQuestionReject={handleQuestionReject}
     />
   );
 }

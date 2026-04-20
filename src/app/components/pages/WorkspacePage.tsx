@@ -16,7 +16,6 @@ export function WorkspacePage({
   onDraftChange,
   onAgentChange,
   onSend,
-  onPermissionAction,
   serverLabel,
   hasSidePanel,
 }: {
@@ -31,7 +30,6 @@ export function WorkspacePage({
   onDraftChange: (value: string) => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
-  onPermissionAction: (id: string, action: "approved" | "denied") => void;
   serverLabel: string;
   hasSidePanel: boolean;
 }) {
@@ -110,7 +108,7 @@ export function WorkspacePage({
               No messages yet. Send the first remote coding instruction to begin.
             </div>
           ) : (
-            <MessageFeed messages={messages} onPermissionAction={onPermissionAction} />
+            <MessageFeed messages={messages} />
           )}
         </div>
         </div>

@@ -7,6 +7,7 @@ export function loadServerConfig(): ServerConfig {
     baseUrl: "http://127.0.0.1:1656",
     username: "opencode",
     password: "",
+    model: "",
   };
 
   try {
@@ -17,6 +18,7 @@ export function loadServerConfig(): ServerConfig {
       baseUrl: parsed.baseUrl || fallback.baseUrl,
       username: parsed.username || fallback.username,
       password: parsed.password || fallback.password,
+      model: parsed.model || fallback.model,
     };
   } catch {
     return fallback;

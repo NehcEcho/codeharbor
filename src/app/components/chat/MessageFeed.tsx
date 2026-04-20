@@ -1,14 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
 import { MessageBubble } from "./MessageBubble";
-import { PermissionCard } from "./PermissionCard";
 import type { ChatMessage } from "../../../types";
 
 export function MessageFeed({
   messages,
-  onPermissionAction,
 }: {
   messages: ChatMessage[];
-  onPermissionAction: (id: string, action: "approved" | "denied") => void;
 }) {
   const lastMessageId = [...messages].reverse().find((message) => message.role !== "permission")?.id;
 
@@ -23,11 +20,7 @@ export function MessageFeed({
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             layout
           >
-            {message.role === "permission" ? (
-              <PermissionCard message={message} onAction={(action) => onPermissionAction(message.id, action)} />
-            ) : (
-              <MessageBubble message={message} isLatest={message.id === lastMessageId} />
-            )}
+            <MessageBubble message={message} isLatest={message.id === lastMessageId} />
           </motion.div>
         ))}
       </AnimatePresence>

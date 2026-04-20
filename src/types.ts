@@ -2,6 +2,43 @@ export type ServerConfig = {
   baseUrl: string;
   username: string;
   password: string;
+  model: string;
+};
+
+export type QuestionOption = {
+  label: string;
+  description: string;
+};
+
+export type QuestionInfo = {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+};
+
+export type QuestionRequest = {
+  id: string;
+  sessionID: string;
+  questions: QuestionInfo[];
+  tool?: {
+    messageID: string;
+    callID: string;
+  };
+};
+
+export type PermissionRequest = {
+  id: string;
+  sessionID: string;
+  permission: string;
+  patterns: string[];
+  metadata: Record<string, unknown>;
+  always: string[];
+  tool?: {
+    messageID: string;
+    callID: string;
+  };
 };
 
 export type ConnectionState = "idle" | "success" | "error";
@@ -66,14 +103,6 @@ export type SendMessageRequest = {
     type: string;
     text: string;
   }>;
-};
-
-export type PermissionRequest = {
-  id: string;
-  sessionID: string;
-  command?: string;
-  tool?: string;
-  message?: string;
 };
 
 export type AppEvent = {

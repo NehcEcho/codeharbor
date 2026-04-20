@@ -3,6 +3,8 @@ import type {
   CreateSessionRequest,
   HealthResponse,
   MessageEnvelope,
+  PermissionRequest,
+  QuestionRequest,
   SendMessageRequest,
   ServerConfig,
   Session,
@@ -152,6 +154,34 @@ export const opencodeApi = {
     return request<boolean>(config, `/session/${sessionId}/permissions/${permissionId}`, {
       method: "POST",
       body: JSON.stringify({ response }),
+    });
+  },
+
+  listPermissions(config: ServerConfig) {
+    return request<PermissionRequest[]>(config, "/permission");
+  },
+
+  replyPermission(config: ServerConfig, requestId: string, reply: "once" | "always" | "reject", message?: string) {
+    return request<boolean>(config, `/permission/${requestId}/reply`, {
+      method: "POST",
+      body: JSON.stringify(message ? { reply, message } : { reply }),
+    });
+  },
+
+  listQuestions(config: ServerConfig) {
+    return request<QuestionRequest[]>(config, "/question");
+  },
+
+  replyQuestion(config: ServerConfig, requestId: string, answers: string[][]) {
+    return request<boolean>(config, `/question/${requestId}/reply`, {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    });
+  },
+
+  rejectQuestion(config: ServerConfig, requestId: string) {
+    return request<boolean>(config, `/question/${requestId}/reject`, {
+      method: "POST",
     });
   },
 

@@ -1,6 +1,6 @@
 import { motion } from "motion/react";
 import { clsx } from "clsx";
-import type { ChatMessage } from "../../../types";
+import type { PermissionRequest } from "../../../types";
 import {
   AlertTriangleIcon,
   CheckIcon,
@@ -9,46 +9,37 @@ import {
   XIcon,
 } from "../ui/icons";
 
-function permissionMeta(message: ChatMessage) {
-  const commandPart = message.parts.find((part) => part.type === "permission-command");
-  const explanationPart = message.parts.find((part) => part.type === "permission-explanation");
-  const riskPart = message.parts.find((part) => part.type === "permission-risk");
+function formatPermissionTitle(permission: string) {
+  return permission
+    .split(/[.:/_-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
+function permissionMeta(request: PermissionRequest) {
+  const primaryPattern = request.patterns[0];
+  const command = typeof primaryPattern === "string" && primaryPattern.trim() ? primaryPattern : request.permission;
+  const explanation = `OpenCode requests permission to run ${request.permission}${request.patterns.length > 0 ? ` on ${request.patterns.join(", ")}` : ""}.`;
+  const risk = request.always.length > 0 ? "Persistent" : "One-time";
   return {
-    command: typeof commandPart?.text === "string" ? commandPart.text : "Unknown command",
-    explanation:
-      typeof explanationPart?.text === "string"
-        ? explanationPart.text
-        : "OpenCode is requesting approval to continue.",
-    risk: typeof riskPart?.text === "string" ? riskPart.text : "Medium",
+    title: formatPermissionTitle(request.permission),
+    command,
+    explanation,
+    risk,
   };
 }
 
 export function PermissionCard({
-  message,
+  request,
+  isResponding,
   onAction,
 }: {
-  message: ChatMessage;
-  onAction: (action: "approved" | "denied") => void;
+  request: PermissionRequest;
+  isResponding?: boolean;
+  onAction: (action: "once" | "always" | "reject") => void;
 }) {
-  const { command, explanation, risk } = permissionMeta(message);
-
-  if (message.status && message.status !== "pending") {
-    return (
-      <motion.div
-        className={clsx(
-          "flex items-center gap-3 p-3 rounded-xl border text-sm",
-          message.status === "approved"
-            ? "bg-emerald-50/50 border-emerald-100/50 text-emerald-800"
-            : "bg-rose-50/50 border-rose-100/50 text-rose-800",
-        )}
-      >
-        {message.status === "approved" ? <CheckIcon className="w-4 h-4" /> : <XIcon className="w-4 h-4" />}
-        <span className="font-semibold">{message.status === "approved" ? "Approved" : "Denied"}</span>
-        <span className="font-mono text-xs opacity-75 truncate">{command}</span>
-      </motion.div>
-    );
-  }
+  const { title, command, explanation, risk } = permissionMeta(request);
 
   return (
     <motion.div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden mt-4 mb-4 relative">
@@ -69,7 +60,7 @@ export function PermissionCard({
 
         <div className="flex-1 space-y-4">
           <div>
-            <h3 className="font-semibold text-stone-900 text-[15px] mb-1">Permission Required</h3>
+            <h3 className="font-semibold text-stone-900 text-[15px] mb-1">{title || "Permission Required"}</h3>
             <p className="text-stone-600 text-sm leading-relaxed">{explanation}</p>
           </div>
 
@@ -83,16 +74,26 @@ export function PermissionCard({
 
           <div className="flex items-center gap-3 pt-2 border-t border-stone-100">
             <button
-              onClick={() => onAction("approved")}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-stone-900 text-white rounded-lg font-medium hover:bg-stone-800 transition-colors shadow-sm focus:ring-4 focus:ring-stone-900/10 active:scale-95"
+              onClick={() => onAction("once")}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-stone-900 text-white rounded-lg font-medium hover:bg-stone-800 transition-colors shadow-sm focus:ring-4 focus:ring-stone-900/10 active:scale-95 disabled:opacity-60"
               type="button"
+              disabled={isResponding}
             >
-              <CheckIcon className="w-4 h-4" /> Allow
+              <CheckIcon className="w-4 h-4" /> Allow once
             </button>
             <button
-              onClick={() => onAction("denied")}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 bg-white text-rose-600 rounded-lg font-medium hover:bg-rose-50 border border-rose-200/50 transition-colors shadow-sm focus:ring-4 focus:ring-rose-500/10 active:scale-95"
+              onClick={() => onAction("always")}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white text-emerald-700 rounded-lg font-medium hover:bg-emerald-50 border border-emerald-200/70 transition-colors shadow-sm focus:ring-4 focus:ring-emerald-500/10 active:scale-95 disabled:opacity-60"
               type="button"
+              disabled={isResponding || request.always.length === 0}
+            >
+              <CheckIcon className="w-4 h-4" /> Always allow
+            </button>
+            <button
+              onClick={() => onAction("reject")}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white text-rose-600 rounded-lg font-medium hover:bg-rose-50 border border-rose-200/50 transition-colors shadow-sm focus:ring-4 focus:ring-rose-500/10 active:scale-95 disabled:opacity-60"
+              type="button"
+              disabled={isResponding}
             >
               <XIcon className="w-4 h-4" /> Deny
             </button>
