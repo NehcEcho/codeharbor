@@ -175,6 +175,7 @@ type QueuedMessage = {
 type AwaitingSessionCompletion = {
   sessionId: string;
   seenBusy: boolean;
+  startedAt: number;
 };
 
 function markSessionActivity(current: SessionActivityMap, sessionID: string, timestamp = Date.now()) {
@@ -365,7 +366,11 @@ function App() {
 
           return { ...current, [item.sessionId]: nextSessionQueue };
         });
-        setAwaitingSessionCompletion({ sessionId: item.sessionId, seenBusy: false });
+        setAwaitingSessionCompletion({
+          sessionId: item.sessionId,
+          seenBusy: false,
+          startedAt: Date.now(),
+        });
         setEvents((current) => [`Sent queued message - ${item.agent}`, ...current].slice(0, 20));
 
         void refreshSessions();
@@ -422,6 +427,7 @@ function App() {
       setAwaitingSessionCompletion({
         sessionId: awaitingSessionCompletion.sessionId,
         seenBusy: true,
+        startedAt: awaitingSessionCompletion.startedAt,
       });
       return;
     }
@@ -430,6 +436,20 @@ function App() {
       setAwaitingSessionCompletion(null);
     }
   }, [awaitingSessionCompletion, statusMap]);
+
+  useEffect(() => {
+    if (!awaitingSessionCompletion || awaitingSessionCompletion.seenBusy) return;
+
+    const timeout = window.setTimeout(() => {
+      setAwaitingSessionCompletion((current) => {
+        if (!current || current.seenBusy) return current;
+        if (current.startedAt !== awaitingSessionCompletion.startedAt) return current;
+        return null;
+      });
+    }, 2000);
+
+    return () => window.clearTimeout(timeout);
+  }, [awaitingSessionCompletion]);
 
   const handlePermissionAction = useCallback(
     async (id: string, action: "approved" | "denied") => {
