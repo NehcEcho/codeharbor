@@ -12,6 +12,10 @@ import {
   UserIcon,
 } from "../ui/icons";
 
+type ContentSection =
+  | { type: "text"; value: string }
+  | { type: "collapsible"; children: ContentSection[] };
+
 function extractBody(message: ChatMessage) {
   if (message.role === "permission") return "";
   return message.parts
@@ -23,6 +27,147 @@ function extractBody(message: ChatMessage) {
     })
     .filter(Boolean)
     .join("\n\n");
+}
+
+function splitContentSections(content: string): ContentSection[] {
+  if (!content.trim()) return [];
+
+  const startToken = "[step-start]";
+  const endToken = "[step-finish]";
+  const tokenPattern = /\[step-start\]|\[step-finish\]/g;
+  const root: ContentSection[] = [];
+  const sectionStack: ContentSection[][] = [root];
+  let cursor = 0;
+
+  const appendText = (value: string) => {
+    if (!value.trim()) return;
+    sectionStack[sectionStack.length - 1].push({ type: "text", value: value.trim() });
+  };
+
+  for (const match of content.matchAll(tokenPattern)) {
+    const token = match[0];
+    const index = match.index ?? 0;
+
+    appendText(content.slice(cursor, index));
+
+    if (token === startToken) {
+      const section: ContentSection = { type: "collapsible", children: [] };
+      sectionStack[sectionStack.length - 1].push(section);
+      sectionStack.push(section.children);
+    } else if (sectionStack.length > 1) {
+      sectionStack.pop();
+    } else {
+      appendText(token);
+    }
+
+    cursor = index + token.length;
+  }
+
+  appendText(content.slice(cursor));
+
+  while (sectionStack.length > 1) {
+    const orphanChildren = sectionStack.pop();
+    if (!orphanChildren) break;
+    const parent = sectionStack[sectionStack.length - 1];
+    const lastSection = parent[parent.length - 1];
+    if (lastSection?.type === "collapsible" && lastSection.children === orphanChildren) {
+      parent[parent.length - 1] = {
+        type: "text",
+        value: `${startToken}\n${flattenContentSections(orphanChildren)}`.trim(),
+      };
+    }
+  }
+
+  return root;
+}
+
+function flattenContentSections(sections: ContentSection[]): string {
+  return sections
+    .map((section) =>
+      section.type === "text"
+        ? section.value
+        : `[step-start]\n${flattenContentSections(section.children)}\n[step-finish]`,
+    )
+    .join("\n\n")
+    .trim();
+}
+
+function renderContentSections({
+  sections,
+  messageId,
+  expandedContent,
+  setExpandedContent,
+  depth = 0,
+  pathPrefix = "content",
+}: {
+  sections: ContentSection[];
+  messageId: string;
+  expandedContent: Record<string, boolean>;
+  setExpandedContent: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  depth?: number;
+  pathPrefix?: string;
+}) {
+  return sections.map((section, index) => {
+    if (section.type === "text") {
+      return (
+        <div
+          key={`${pathPrefix}-text-${index}`}
+          className="text-[15px] text-stone-700 leading-relaxed font-sans max-w-none whitespace-pre-wrap"
+        >
+          {section.value}
+        </div>
+      );
+    }
+
+    const sectionId = `${messageId}-${pathPrefix}-${index}`;
+    const isExpanded = expandedContent[sectionId] || false;
+
+    return (
+      <div
+        key={sectionId}
+        className={clsx(
+          "rounded-xl border border-stone-200 overflow-hidden bg-stone-50/60",
+          depth > 0 && "mt-3 ml-4",
+        )}
+      >
+        <button
+          onClick={() => setExpandedContent((current) => ({ ...current, [sectionId]: !isExpanded }))}
+          className="w-full flex items-center gap-3 p-3 text-left hover:bg-stone-100/60 transition-colors"
+          type="button"
+        >
+          <div className="text-stone-400">
+            {isExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium text-stone-800">Step details</div>
+            <div className="text-xs text-stone-500 mt-1">Nested step block</div>
+          </div>
+        </button>
+
+        <AnimatePresence initial={false}>
+          {isExpanded ? (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="border-t border-stone-200 bg-white"
+            >
+              <div className="p-4 space-y-3">
+                {renderContentSections({
+                  sections: section.children,
+                  messageId,
+                  expandedContent,
+                  setExpandedContent,
+                  depth: depth + 1,
+                  pathPrefix: `${pathPrefix}-${index}`,
+                })}
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    );
+  });
 }
 
 function extractToolParts(message: ChatMessage) {
@@ -65,7 +210,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
+  const [expandedContent, setExpandedContent] = useState<Record<string, boolean>>({});
   const content = extractBody(message);
+  const contentSections = splitContentSections(content);
   const toolParts = extractToolParts(message);
   const time = message.timestampLabel;
 
@@ -98,11 +245,12 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           </span>
         </div>
 
-        {content ? (
-          <div className="text-[15px] text-stone-700 leading-relaxed font-sans max-w-none whitespace-pre-wrap">
-            {content}
-          </div>
-        ) : null}
+        {renderContentSections({
+          sections: contentSections,
+          messageId: message.id,
+          expandedContent,
+          setExpandedContent,
+        })}
 
         {(isTool || toolParts.length > 0) &&
           toolParts.map((tool) => {
