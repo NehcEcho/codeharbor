@@ -34,32 +34,47 @@ export function WorkspacePage({
   hasSidePanel: boolean;
 }) {
   const feedRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  const updateScrollState = (node: HTMLDivElement) => {
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    const isNearBottom = distanceFromBottom <= 160;
+    shouldAutoScrollRef.current = isNearBottom;
+    setShowScrollToBottom(!isNearBottom);
+  };
 
   const scrollToBottom = () => {
     if (!feedRef.current) return;
     feedRef.current.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
+    shouldAutoScrollRef.current = true;
+    setShowScrollToBottom(false);
   };
 
   useEffect(() => {
-    if (feedRef.current) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight;
-    }
+    const node = feedRef.current;
+    if (!node || !shouldAutoScrollRef.current) return;
+    node.scrollTop = node.scrollHeight;
   }, [messages]);
 
   useEffect(() => {
     const node = feedRef.current;
     if (!node) return;
+    node.scrollTop = node.scrollHeight;
+    shouldAutoScrollRef.current = true;
+    setShowScrollToBottom(false);
+  }, [session?.id]);
 
-    const updateScrollState = () => {
-      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
-      setShowScrollToBottom(distanceFromBottom > 160);
-    };
+  useEffect(() => {
+    const node = feedRef.current;
+    if (!node) return;
 
-    updateScrollState();
-    node.addEventListener("scroll", updateScrollState);
+    const handleScroll = () => updateScrollState(node);
 
-    return () => node.removeEventListener("scroll", updateScrollState);
+    updateScrollState(node);
+    node.addEventListener("scroll", handleScroll);
+
+    return () => node.removeEventListener("scroll", handleScroll);
   }, []);
 
   const sessionTitle = useMemo(() => session?.title || "OpenCode Session", [session]);
