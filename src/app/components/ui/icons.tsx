@@ -20,6 +20,7 @@ export const ActivityIcon = resolveIcon("Activity");
 export const AlertCircleIcon = resolveIcon("CircleAlert");
 export const AlertTriangleIcon = resolveIcon("TriangleAlert");
 export const ArrowUpIcon = resolveIcon("ArrowUp");
+export const ArrowDownIcon = resolveIcon("ArrowDown");
 export const BotIcon = resolveIcon("Bot");
 export const CheckCircleIcon = resolveIcon("CircleCheckBig");
 export const CheckIcon = resolveIcon("Check");

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CommandInput } from "../chat/CommandInput";
 import { MessageFeed } from "../chat/MessageFeed";
 import type { ChatMessage, Session } from "../../../types";
-import { BotIcon } from "../ui/icons";
+import { ArrowDownIcon, BotIcon } from "../ui/icons";
 
 export function WorkspacePage({
   session,
@@ -34,12 +34,33 @@ export function WorkspacePage({
   hasSidePanel: boolean;
 }) {
   const feedRef = useRef<HTMLDivElement>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+
+  const scrollToBottom = () => {
+    if (!feedRef.current) return;
+    feedRef.current.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
+  };
 
   useEffect(() => {
     if (feedRef.current) {
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
   }, [messages]);
+
+  useEffect(() => {
+    const node = feedRef.current;
+    if (!node) return;
+
+    const updateScrollState = () => {
+      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+      setShowScrollToBottom(distanceFromBottom > 160);
+    };
+
+    updateScrollState();
+    node.addEventListener("scroll", updateScrollState);
+
+    return () => node.removeEventListener("scroll", updateScrollState);
+  }, []);
 
   const sessionTitle = useMemo(() => session?.title || "OpenCode Session", [session]);
 
@@ -64,7 +85,8 @@ export function WorkspacePage({
         ) : null}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-6" ref={feedRef}>
+      <div className="relative flex-1 min-h-0">
+        <div className="h-full overflow-y-auto px-4 sm:px-8 py-6" ref={feedRef}>
         <div className={`mx-auto space-y-8 ${hasSidePanel ? "max-w-3xl xl:max-w-[52rem]" : "max-w-4xl"}`}>
           {messages.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50/70 p-10 text-center text-stone-500">
@@ -74,6 +96,17 @@ export function WorkspacePage({
             <MessageFeed messages={messages} onPermissionAction={onPermissionAction} />
           )}
         </div>
+        </div>
+        {showScrollToBottom ? (
+          <button
+            type="button"
+            onClick={scrollToBottom}
+            className="absolute bottom-5 right-5 inline-flex h-11 w-11 items-center justify-center rounded-full border border-stone-200 bg-white/95 text-stone-700 shadow-lg shadow-stone-300/30 backdrop-blur transition hover:bg-stone-50 hover:text-stone-900"
+            title="Scroll to bottom"
+          >
+            <ArrowDownIcon className="h-5 w-5" />
+          </button>
+        ) : null}
       </div>
 
       <div className="shrink-0 border-t border-stone-200/70 bg-white/95 backdrop-blur px-4 sm:px-8 py-4">
