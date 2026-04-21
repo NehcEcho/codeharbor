@@ -38,6 +38,9 @@ export function MainLayout({
   isRefreshingSession,
   isBusy,
   isStalled,
+  canRetryLastMessage,
+  isRetryingLastMessage,
+  isAbortingSession,
   diffCount,
   events,
   permissionRequests,
@@ -50,6 +53,8 @@ export function MainLayout({
   onDraftChange,
   onAgentChange,
   onSend,
+  onRetryLastMessage,
+  onAbortSession,
   onRefreshDiff,
   onPermissionAction,
   respondingPermissionId,
@@ -76,6 +81,9 @@ export function MainLayout({
   isRefreshingSession: boolean;
   isBusy: boolean;
   isStalled: boolean;
+  canRetryLastMessage: boolean;
+  isRetryingLastMessage: boolean;
+  isAbortingSession: boolean;
   diffCount: number;
   events: string[];
   permissionRequests: PermissionRequest[];
@@ -88,6 +96,8 @@ export function MainLayout({
   onDraftChange: (value: string) => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
+  onRetryLastMessage: () => void;
+  onAbortSession: () => void;
   onRefreshDiff: () => void;
   onPermissionAction: (id: string, action: "once" | "always" | "reject") => Promise<void>;
   respondingPermissionId: string | null;
@@ -216,9 +226,14 @@ export function MainLayout({
                 queuedCount={queuedCount}
                 isBusy={isBusy}
                 isStalled={isStalled}
+                canRetryLastMessage={canRetryLastMessage}
+                isRetryingLastMessage={isRetryingLastMessage}
+                isAbortingSession={isAbortingSession}
                 onDraftChange={onDraftChange}
                 onAgentChange={onAgentChange}
                 onSend={onSend}
+                onRetryLastMessage={onRetryLastMessage}
+                onAbortSession={onAbortSession}
                 serverLabel={serverLabel}
                 hasSidePanel={permissionRequests.length > 0 || questionRequests.length > 0}
               />

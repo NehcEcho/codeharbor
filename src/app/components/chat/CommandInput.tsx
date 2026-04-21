@@ -4,8 +4,11 @@ import { clsx } from "clsx";
 import {
   ArrowUpIcon,
   LightbulbIcon,
+  MoreHorizontalIcon,
   PaperclipIcon,
+  RefreshCwIcon,
   Settings2Icon,
+  SquareIcon,
   WrenchIcon,
 } from "../ui/icons";
 
@@ -18,6 +21,11 @@ interface CommandInputProps {
   isSending: boolean;
   queuedCount: number;
   isBusy: boolean;
+  canRetryLastMessage: boolean;
+  isRetryingLastMessage: boolean;
+  isAbortingSession: boolean;
+  onRetryLastMessage: () => void;
+  onAbortSession: () => void;
 }
 
 export function CommandInput({
@@ -29,9 +37,15 @@ export function CommandInput({
   isSending,
   queuedCount,
   isBusy,
+  canRetryLastMessage,
+  isRetryingLastMessage,
+  isAbortingSession,
+  onRetryLastMessage,
+  onAbortSession,
 }: CommandInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -159,20 +173,111 @@ export function CommandInput({
             </div>
           </div>
 
-          <button
-            onClick={onSend}
-            disabled={!value.trim()}
-            className={clsx(
-              "p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center",
-              value.trim()
-                ? "bg-stone-900 text-white hover:bg-stone-800 shadow-sm active:scale-95"
-                : "bg-stone-100 text-stone-400",
-            )}
-            type="button"
-            title={isSending ? "Sending message" : queuedCount > 0 ? "Add message to queue" : "Send message"}
-          >
-            <ArrowUpIcon className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setIsActionMenuOpen((current) => !current)}
+                className={clsx(
+                  "relative inline-flex h-10 items-center justify-center rounded-xl border px-3 transition-all",
+                  isActionMenuOpen
+                    ? "border-stone-300 bg-stone-100 text-stone-700"
+                    : isBusy
+                      ? "border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100"
+                      : canRetryLastMessage
+                        ? "border-stone-300 bg-stone-100 text-stone-700 hover:border-stone-400 hover:bg-stone-200/70"
+                    : "border-stone-200 bg-white text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700",
+                )}
+                type="button"
+                title="Session actions"
+              >
+                <MoreHorizontalIcon className="h-4 w-4" />
+                {canRetryLastMessage && !isBusy ? (
+                  <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-stone-500" />
+                ) : null}
+                {isBusy ? (
+                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-rose-100" />
+                ) : null}
+              </button>
+
+              <AnimatePresence>
+                {isActionMenuOpen ? (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsActionMenuOpen(false)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ type: "spring", duration: 0.25 }}
+                      className="absolute bottom-full right-0 z-50 mb-2 w-44 overflow-hidden rounded-2xl border border-stone-200 bg-white p-1.5 shadow-xl"
+                    >
+                      <button
+                        onClick={() => {
+                          onRetryLastMessage();
+                          setIsActionMenuOpen(false);
+                        }}
+                        disabled={!canRetryLastMessage || isRetryingLastMessage || isAbortingSession}
+                        className={clsx(
+                          "flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                          canRetryLastMessage && !isRetryingLastMessage && !isAbortingSession
+                            ? "text-stone-700 hover:bg-stone-50"
+                            : "text-stone-400",
+                        )}
+                        type="button"
+                      >
+                        <RefreshCwIcon className={clsx("h-4 w-4 shrink-0", isRetryingLastMessage ? "animate-spin" : "")} />
+                        <div>
+                          <div className="font-medium">Retry</div>
+                          <div className="text-[11px] text-stone-400">Resend last message</div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          onAbortSession();
+                          setIsActionMenuOpen(false);
+                        }}
+                        disabled={!isBusy || isAbortingSession}
+                        className={clsx(
+                          "mt-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                          isBusy && !isAbortingSession
+                            ? "text-rose-700 hover:bg-rose-50"
+                            : "text-stone-400",
+                        )}
+                        type="button"
+                      >
+                        <SquareIcon className="h-4 w-4 shrink-0 fill-current" />
+                        <div>
+                          <div className="font-medium">{isAbortingSession ? "Stopping" : "Stop"}</div>
+                          <div className="text-[11px] text-stone-400">Abort current run</div>
+                        </div>
+                      </button>
+                    </motion.div>
+                  </>
+                ) : null}
+              </AnimatePresence>
+            </div>
+
+            <button
+              onClick={onSend}
+              disabled={!value.trim()}
+              className={clsx(
+                "p-2 rounded-xl transition-all cursor-pointer flex items-center justify-center",
+                value.trim()
+                  ? "bg-stone-900 text-white hover:bg-stone-800 shadow-sm active:scale-95"
+                  : "bg-stone-100 text-stone-400",
+              )}
+              type="button"
+              title={isSending ? "Sending message" : queuedCount > 0 ? "Add message to queue" : "Send message"}
+            >
+              <ArrowUpIcon className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 

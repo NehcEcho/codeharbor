@@ -128,6 +128,12 @@ export const opencodeApi = {
     return request<SessionStatusMap>(config, "/session/status");
   },
 
+  abortSession(config: ServerConfig, sessionId: string) {
+    return request<boolean>(config, `/session/${sessionId}/abort`, {
+      method: "POST",
+    });
+  },
+
   createSession(config: ServerConfig, body: CreateSessionRequest) {
     return request<Session>(config, "/session", {
       method: "POST",

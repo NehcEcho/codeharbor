@@ -13,9 +13,14 @@ export function WorkspacePage({
   queuedCount,
   isBusy,
   isStalled,
+  canRetryLastMessage,
+  isRetryingLastMessage,
+  isAbortingSession,
   onDraftChange,
   onAgentChange,
   onSend,
+  onRetryLastMessage,
+  onAbortSession,
   serverLabel,
   hasSidePanel,
 }: {
@@ -27,9 +32,14 @@ export function WorkspacePage({
   queuedCount: number;
   isBusy: boolean;
   isStalled: boolean;
+  canRetryLastMessage: boolean;
+  isRetryingLastMessage: boolean;
+  isAbortingSession: boolean;
   onDraftChange: (value: string) => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
+  onRetryLastMessage: () => void;
+  onAbortSession: () => void;
   serverLabel: string;
   hasSidePanel: boolean;
 }) {
@@ -131,11 +141,16 @@ export function WorkspacePage({
             onChange={onDraftChange}
             onSend={onSend}
                 agent={agent}
-                onAgentChange={onAgentChange}
-                isSending={isSending}
-                queuedCount={queuedCount}
-                isBusy={isBusy}
-              />
+              onAgentChange={onAgentChange}
+              isSending={isSending}
+              queuedCount={queuedCount}
+              isBusy={isBusy}
+              canRetryLastMessage={canRetryLastMessage}
+              isRetryingLastMessage={isRetryingLastMessage}
+              isAbortingSession={isAbortingSession}
+              onRetryLastMessage={onRetryLastMessage}
+              onAbortSession={onAbortSession}
+               />
         </div>
       </div>
     </div>

@@ -204,6 +204,12 @@ type QueuedMessage = {
   createdAt: number;
 };
 
+type SentMessageDraft = {
+  text: string;
+  agent: "build" | "plan";
+  model: string;
+};
+
 type AwaitingSessionCompletion = {
   sessionId: string;
   seenBusy: boolean;
@@ -250,10 +256,13 @@ function App() {
   const [modelProviders, setModelProviders] = useState<ConfigProvider[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [retryingSessionId, setRetryingSessionId] = useState<string | null>(null);
+  const [abortingSessionId, setAbortingSessionId] = useState<string | null>(null);
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
   const [respondingPermissionId, setRespondingPermissionId] = useState<string | null>(null);
   const [questionRequests, setQuestionRequests] = useState<QuestionRequest[]>([]);
   const [sessionActivity, setSessionActivity] = useState<SessionActivityMap>({});
+  const [lastSentDraftBySession, setLastSentDraftBySession] = useState<Record<string, SentMessageDraft>>({});
   const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, QueuedMessage[]>>({});
   const [dispatchingMessage, setDispatchingMessage] = useState<QueuedMessage | null>(null);
   const [awaitingSessionCompletion, setAwaitingSessionCompletion] = useState<AwaitingSessionCompletion | null>(null);
@@ -271,6 +280,7 @@ function App() {
   const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
   const queuedCount = queuedMessages.length;
   const selectedModel = useMemo(() => normalizeModelValue(config.model, modelProviders), [config.model, modelProviders]);
+  const selectedLastSentDraft = selectedSessionId ? lastSentDraftBySession[selectedSessionId] || null : null;
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
   const isSessionStalled = Boolean(
     isSessionBusy &&
@@ -421,6 +431,14 @@ function App() {
       ...current,
       [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
     }));
+    setLastSentDraftBySession((current) => ({
+      ...current,
+      [selectedSessionId]: {
+        text,
+        agent: selectedAgent as "build" | "plan",
+        model: selectedModel,
+      },
+    }));
     setMessages((current) => [...current, optimisticMessage]);
     setDraft("");
     setEvents((current) => {
@@ -429,6 +447,61 @@ function App() {
       return [label, ...current].slice(0, 20);
     });
   }, [draft, queuedCount, selectedAgent, selectedModel, selectedSessionId]);
+
+  const handleRetryLastMessage = useCallback(async () => {
+    if (!selectedSessionId) return;
+
+    const previous = lastSentDraftBySession[selectedSessionId];
+    if (!previous?.text.trim()) return;
+
+    const now = Date.now();
+    const optimisticMessageId = `local-${now}`;
+    const queueItem: QueuedMessage = {
+      id: `queue-${now}-${Math.random().toString(36).slice(2, 8)}`,
+      sessionId: selectedSessionId,
+      text: previous.text,
+      agent: previous.agent,
+      model: previous.model,
+      optimisticMessageId,
+      createdAt: now,
+    };
+
+    setRetryingSessionId(selectedSessionId);
+    setQueuedMessagesBySession((current) => ({
+      ...current,
+      [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
+    }));
+    setMessages((current) => [
+      ...current,
+      {
+        id: optimisticMessageId,
+        role: "user",
+        parts: [{ type: "text", text: previous.text }],
+        timestampLabel: formatTimestamp(),
+        isPending: true,
+      },
+    ]);
+    setEvents((current) => [`Retried last message - ${previous.agent}`, ...current].slice(0, 20));
+  }, [lastSentDraftBySession, selectedSessionId]);
+
+  const handleAbortSession = useCallback(async () => {
+    if (!selectedSessionId || abortingSessionId === selectedSessionId) return;
+
+    setAbortingSessionId(selectedSessionId);
+
+    try {
+      await opencodeApi.abortSession(config, selectedSessionId);
+      setAwaitingSessionCompletion(null);
+      setDispatchingMessage(null);
+      setEvents((current) => [`Aborted session run - ${selectedSessionId}`, ...current].slice(0, 20));
+      await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "abort failed";
+      setEvents((current) => [`Abort failed - ${message}`, ...current].slice(0, 20));
+    } finally {
+      setAbortingSessionId((current) => (current === selectedSessionId ? null : current));
+    }
+  }, [abortingSessionId, config, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
 
   const dispatchQueuedMessage = useCallback(
     async (item: QueuedMessage) => {
@@ -484,6 +557,7 @@ function App() {
         setEvents((current) => [`Queued send failed - ${message}`, ...current].slice(0, 20));
       } finally {
         setDispatchingMessage((current) => (current?.id === item.id ? null : current));
+        setRetryingSessionId((current) => (current === item.sessionId ? null : current));
         if (item.sessionId === selectedSessionId) {
           setIsSending(false);
         }
@@ -931,6 +1005,9 @@ function App() {
       permissionRequests={permissionRequests}
       questionRequests={questionRequests}
       isStalled={isSessionStalled}
+      canRetryLastMessage={Boolean(selectedLastSentDraft?.text.trim())}
+      isRetryingLastMessage={retryingSessionId === selectedSessionId}
+      isAbortingSession={abortingSessionId === selectedSessionId}
       onConfigChange={setConfig}
       onConnect={handleConnect}
       onSessionSelect={setSelectedSessionId}
@@ -939,6 +1016,8 @@ function App() {
       onDraftChange={setDraft}
       onAgentChange={(value) => setSelectedAgent(value)}
       onSend={handleSend}
+      onRetryLastMessage={() => void handleRetryLastMessage()}
+      onAbortSession={() => void handleAbortSession()}
       onRefreshDiff={() => void refreshDiff()}
       respondingPermissionId={respondingPermissionId}
       onPermissionAction={handlePermissionAction}
