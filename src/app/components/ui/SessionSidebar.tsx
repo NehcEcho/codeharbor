@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import type { Session, SessionStatusMap } from "../../../types";
 import {
@@ -35,6 +36,18 @@ export function SessionSidebar({
   onSelect: (sessionId: string) => void;
   onCreate: () => void;
 }) {
+  const [query, setQuery] = useState("");
+
+  const filteredSessions = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return sessions;
+
+    return sessions.filter((session) => {
+      const title = (session.title || "Untitled Session").toLowerCase();
+      return title.includes(normalizedQuery) || session.id.toLowerCase().includes(normalizedQuery);
+    });
+  }, [query, sessions]);
+
   return (
     <div className="flex flex-col h-full bg-inherit">
       <div className="p-4 flex flex-col gap-4 sticky top-0 bg-[#FAFAEE]/95 backdrop-blur-sm z-10 border-b border-stone-100/50 pb-3 shadow-[0_4px_10px_rgba(0,0,0,0.01)] shrink-0">
@@ -48,6 +61,8 @@ export function SessionSidebar({
           <input
             type="text"
             placeholder="Search sessions..."
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
             className="w-full pl-9 pr-3 py-2 bg-white/60 border border-stone-200/60 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-400 transition-all text-stone-700 placeholder-stone-400"
           />
         </div>
@@ -59,7 +74,10 @@ export function SessionSidebar({
           {sessions.length === 0 ? (
             <div className="px-3 py-6 text-sm text-stone-400">No sessions yet. Start one to begin a remote coding task.</div>
           ) : null}
-          {sessions.map((session) => {
+          {sessions.length > 0 && filteredSessions.length === 0 ? (
+            <div className="px-3 py-6 text-sm text-stone-400">No sessions match "{query.trim()}".</div>
+          ) : null}
+          {filteredSessions.map((session) => {
             const isActive = selectedId === session.id;
             const status = statusMap[session.id] || "idle";
 
