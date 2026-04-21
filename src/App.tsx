@@ -652,6 +652,7 @@ function App() {
               if (request.sessionID) {
                 setSessionActivity((current) => markSessionActivity(current, request.sessionID));
               }
+              scheduleRefresh();
             }
 
             if (payloadType === "permission.asked") {
@@ -662,6 +663,7 @@ function App() {
               if (request.sessionID) {
                 setSessionActivity((current) => markSessionActivity(current, request.sessionID));
               }
+              scheduleRefresh();
             }
 
             if (payloadType === "permission.replied") {
@@ -798,6 +800,17 @@ function App() {
 
     return () => window.clearInterval(interval);
   }, [config.password, isSessionBusy, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
+
+  useEffect(() => {
+    if (!selectedSessionId || !config.password) return;
+
+    const interval = window.setInterval(() => {
+      void refreshPermissions();
+      void refreshQuestions();
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [config.password, refreshPermissions, refreshQuestions, selectedSessionId]);
 
   useEffect(() => {
     if (!config.password) return;
