@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CommandInput } from "../chat/CommandInput";
 import { MessageFeed } from "../chat/MessageFeed";
-import type { ChatMessage, Session } from "../../../types";
+import type { ChatMessage, CommandItem, Session } from "../../../types";
 import { ArrowDownIcon, BotIcon } from "../ui/icons";
 
 export function WorkspacePage({
@@ -9,6 +9,9 @@ export function WorkspacePage({
   messages,
   draft,
   agent,
+  commands,
+  isLoadingCommands,
+  commandsError,
   isSending,
   queuedCount,
   isBusy,
@@ -16,9 +19,11 @@ export function WorkspacePage({
   canRetryLastMessage,
   isRetryingLastMessage,
   isAbortingSession,
+  runningCommandName,
   onDraftChange,
   onAgentChange,
   onSend,
+  onRunCommand,
   onRetryLastMessage,
   onAbortSession,
   serverLabel,
@@ -28,6 +33,9 @@ export function WorkspacePage({
   messages: ChatMessage[];
   draft: string;
   agent: "build" | "plan";
+  commands: CommandItem[];
+  isLoadingCommands: boolean;
+  commandsError: string | null;
   isSending: boolean;
   queuedCount: number;
   isBusy: boolean;
@@ -35,9 +43,11 @@ export function WorkspacePage({
   canRetryLastMessage: boolean;
   isRetryingLastMessage: boolean;
   isAbortingSession: boolean;
+  runningCommandName: string | null;
   onDraftChange: (value: string) => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
+  onRunCommand: (commandName: string, argumentsText: string) => void;
   onRetryLastMessage: () => void;
   onAbortSession: () => void;
   serverLabel: string;
@@ -140,17 +150,22 @@ export function WorkspacePage({
             value={draft}
             onChange={onDraftChange}
             onSend={onSend}
-                agent={agent}
-              onAgentChange={onAgentChange}
-              isSending={isSending}
-              queuedCount={queuedCount}
-              isBusy={isBusy}
-              canRetryLastMessage={canRetryLastMessage}
-              isRetryingLastMessage={isRetryingLastMessage}
-              isAbortingSession={isAbortingSession}
-              onRetryLastMessage={onRetryLastMessage}
-              onAbortSession={onAbortSession}
-               />
+            commands={commands}
+            isLoadingCommands={isLoadingCommands}
+            commandsError={commandsError}
+            agent={agent}
+            onAgentChange={onAgentChange}
+            isSending={isSending}
+            queuedCount={queuedCount}
+            isBusy={isBusy}
+            canRetryLastMessage={canRetryLastMessage}
+            isRetryingLastMessage={isRetryingLastMessage}
+            isAbortingSession={isAbortingSession}
+            runningCommandName={runningCommandName}
+            onRunCommand={onRunCommand}
+            onRetryLastMessage={onRetryLastMessage}
+            onAbortSession={onAbortSession}
+          />
         </div>
       </div>
     </div>

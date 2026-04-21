@@ -4,6 +4,7 @@ import { opencodeApi } from "./lib/opencode";
 import { loadServerConfig, loadSessionModel, saveServerConfig, saveSessionModel } from "./lib/storage";
 import type {
   ChatMessage,
+  CommandItem,
   ConfigProvider,
   ConnectionState,
   MessageEnvelope,
@@ -258,9 +259,13 @@ function App() {
   const [modelProviders, setModelProviders] = useState<ConfigProvider[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [commands, setCommands] = useState<CommandItem[]>([]);
+  const [isLoadingCommands, setIsLoadingCommands] = useState(false);
+  const [commandsError, setCommandsError] = useState<string | null>(null);
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [runningCommandName, setRunningCommandName] = useState<string | null>(null);
   const [retryingSessionId, setRetryingSessionId] = useState<string | null>(null);
   const [abortingSessionId, setAbortingSessionId] = useState<string | null>(null);
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
@@ -353,6 +358,28 @@ function App() {
     }
   }, [config]);
 
+  const refreshCommands = useCallback(async (targetConfig: ServerConfig = config) => {
+    if (!targetConfig.password) {
+      setCommands([]);
+      setCommandsError(null);
+      return;
+    }
+
+    setIsLoadingCommands(true);
+
+    try {
+      const response = await opencodeApi.listCommands(targetConfig);
+      setCommands(response.sort((left, right) => left.name.localeCompare(right.name)));
+      setCommandsError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "failed to load commands";
+      setCommands([]);
+      setCommandsError(`命令列表加载失败: ${message}`);
+    } finally {
+      setIsLoadingCommands(false);
+    }
+  }, [config]);
+
   const refreshSkills = useCallback(async (targetConfig: ServerConfig = config) => {
     if (!targetConfig.password) {
       setSkills([]);
@@ -410,6 +437,7 @@ function App() {
       saveServerConfig(normalized);
       setConnectionState("success");
       setConnectStatus(`已连接 ${normalized.baseUrl} · v${health.version}`);
+      await refreshCommands(normalized);
       await refreshModelProviders(normalized);
       await refreshSkills(normalized);
       await refreshSessions(normalized);
@@ -420,7 +448,7 @@ function App() {
     } finally {
       setIsConnecting(false);
     }
-  }, [config, refreshModelProviders, refreshSessions, refreshSkills]);
+  }, [config, refreshCommands, refreshModelProviders, refreshSessions, refreshSkills]);
 
   const handleCreateSession = useCallback(async () => {
     const title = window.prompt("给新的远程会话取个名字", "Remote coding task");
@@ -543,6 +571,60 @@ function App() {
       setAbortingSessionId((current) => (current === selectedSessionId ? null : current));
     }
   }, [abortingSessionId, config, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
+
+  const handleRunCommand = useCallback(
+    async (commandName: string, argumentsText: string) => {
+      if (!selectedSessionId || !commandName.trim() || runningCommandName) return;
+
+      setRunningCommandName(commandName);
+      setIsSending(true);
+      saveSessionModel(selectedModel);
+      setEvents((current) => [`Running command - /${commandName} ${argumentsText}`.trim(), ...current].slice(0, 20));
+
+      try {
+        await opencodeApi.runCommand(config, selectedSessionId, {
+          command: commandName,
+          arguments: argumentsText,
+          agent: selectedAgent,
+          model: selectedModel || undefined,
+        });
+
+        setAwaitingSessionCompletion({
+          sessionId: selectedSessionId,
+          seenBusy: false,
+          startedAt: Date.now(),
+        });
+
+        await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+
+        window.setTimeout(() => {
+          void refreshSessions();
+          void refreshMessages();
+          void refreshDiff();
+          void refreshPermissions();
+          void refreshQuestions();
+        }, 1200);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "command failed";
+        setEvents((current) => [`Command failed - ${message}`, ...current].slice(0, 20));
+      } finally {
+        setRunningCommandName(null);
+        setIsSending(false);
+      }
+    },
+    [
+      config,
+      refreshDiff,
+      refreshMessages,
+      refreshPermissions,
+      refreshQuestions,
+      refreshSessions,
+      runningCommandName,
+      selectedAgent,
+      selectedModel,
+      selectedSessionId,
+    ],
+  );
 
   const dispatchQueuedMessage = useCallback(
     async (item: QueuedMessage) => {
@@ -713,6 +795,11 @@ function App() {
     if (connectionState !== "success") return;
     void refreshModelProviders();
   }, [connectionState, refreshModelProviders]);
+
+  useEffect(() => {
+    if (connectionState !== "success") return;
+    void refreshCommands();
+  }, [connectionState, refreshCommands]);
 
   useEffect(() => {
     if (connectionState !== "success") return;
@@ -1031,6 +1118,9 @@ function App() {
       modelProviders={modelProviders}
       isLoadingModels={isLoadingModels}
       modelError={modelError}
+      commands={commands}
+      isLoadingCommands={isLoadingCommands}
+      commandsError={commandsError}
       skills={skills}
       isLoadingSkills={isLoadingSkills}
       skillsError={skillsError}
@@ -1056,6 +1146,7 @@ function App() {
       canRetryLastMessage={Boolean(selectedLastSentDraft?.text.trim())}
       isRetryingLastMessage={retryingSessionId === selectedSessionId}
       isAbortingSession={abortingSessionId === selectedSessionId}
+      runningCommandName={runningCommandName}
       onConfigChange={handleConfigChange}
       onConnect={handleConnect}
       onSessionSelect={setSelectedSessionId}
@@ -1064,6 +1155,7 @@ function App() {
       onDraftChange={setDraft}
       onAgentChange={(value) => setSelectedAgent(value)}
       onSend={handleSend}
+      onRunCommand={(commandName, argumentsText) => void handleRunCommand(commandName, argumentsText)}
       onRetryLastMessage={() => void handleRetryLastMessage()}
       onAbortSession={() => void handleAbortSession()}
       onRefreshDiff={() => void refreshDiff()}

@@ -71,6 +71,17 @@ export type SkillItem = {
   content: string;
 };
 
+export type CommandItem = {
+  name: string;
+  description?: string;
+  agent?: string;
+  model?: string;
+  source?: "command" | "mcp" | "skill";
+  template: string;
+  subtask?: boolean;
+  hints: string[];
+};
+
 export type SessionStatusMap = Record<string, string>;
 
 export type Session = {

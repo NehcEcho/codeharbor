@@ -1,5 +1,6 @@
 import type {
   AppEvent,
+  CommandItem,
   ConfigProvidersResponse,
   CreateSessionRequest,
   HealthResponse,
@@ -121,6 +122,10 @@ export const opencodeApi = {
     return request<ConfigProvidersResponse>(config, "/config/providers");
   },
 
+  listCommands(config: ServerConfig) {
+    return request<CommandItem[]>(config, "/command");
+  },
+
   listSessions(config: ServerConfig) {
     return request<Session[]>(config, "/session");
   },
@@ -148,6 +153,22 @@ export const opencodeApi = {
 
   sendMessage(config: ServerConfig, sessionId: string, body: SendMessageRequest) {
     return request<MessageEnvelope>(config, `/session/${sessionId}/message`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  runCommand(
+    config: ServerConfig,
+    sessionId: string,
+    body: {
+      command: string;
+      arguments: string;
+      agent?: string;
+      model?: string;
+    },
+  ) {
+    return request<MessageEnvelope>(config, `/session/${sessionId}/command`, {
       method: "POST",
       body: JSON.stringify(body),
     });

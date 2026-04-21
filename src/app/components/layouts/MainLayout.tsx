@@ -8,6 +8,7 @@ import { ConnectPage } from "../pages/ConnectPage";
 import { WorkspacePage } from "../pages/WorkspacePage";
 import type {
   ChatMessage,
+  CommandItem,
   ConfigProvider,
   ConnectionState,
   PermissionRequest,
@@ -24,6 +25,9 @@ export function MainLayout({
   modelProviders,
   isLoadingModels,
   modelError,
+  commands,
+  isLoadingCommands,
+  commandsError,
   skills,
   isLoadingSkills,
   skillsError,
@@ -45,6 +49,7 @@ export function MainLayout({
   canRetryLastMessage,
   isRetryingLastMessage,
   isAbortingSession,
+  runningCommandName,
   diffCount,
   events,
   permissionRequests,
@@ -57,6 +62,7 @@ export function MainLayout({
   onDraftChange,
   onAgentChange,
   onSend,
+  onRunCommand,
   onRetryLastMessage,
   onAbortSession,
   onRefreshDiff,
@@ -70,6 +76,9 @@ export function MainLayout({
   modelProviders: ConfigProvider[];
   isLoadingModels: boolean;
   modelError: string | null;
+  commands: CommandItem[];
+  isLoadingCommands: boolean;
+  commandsError: string | null;
   skills: SkillItem[];
   isLoadingSkills: boolean;
   skillsError: string | null;
@@ -91,6 +100,7 @@ export function MainLayout({
   canRetryLastMessage: boolean;
   isRetryingLastMessage: boolean;
   isAbortingSession: boolean;
+  runningCommandName: string | null;
   diffCount: number;
   events: string[];
   permissionRequests: PermissionRequest[];
@@ -103,6 +113,7 @@ export function MainLayout({
   onDraftChange: (value: string) => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
+  onRunCommand: (commandName: string, argumentsText: string) => void;
   onRetryLastMessage: () => void;
   onAbortSession: () => void;
   onRefreshDiff: () => void;
@@ -235,6 +246,9 @@ export function MainLayout({
                 messages={messages}
                 draft={draft}
                 agent={agent}
+                commands={commands}
+                isLoadingCommands={isLoadingCommands}
+                commandsError={commandsError}
                 isSending={isSending}
                 queuedCount={queuedCount}
                 isBusy={isBusy}
@@ -242,9 +256,11 @@ export function MainLayout({
                 canRetryLastMessage={canRetryLastMessage}
                 isRetryingLastMessage={isRetryingLastMessage}
                 isAbortingSession={isAbortingSession}
+                runningCommandName={runningCommandName}
                 onDraftChange={onDraftChange}
                 onAgentChange={onAgentChange}
                 onSend={onSend}
+                onRunCommand={onRunCommand}
                 onRetryLastMessage={onRetryLastMessage}
                 onAbortSession={onAbortSession}
                 serverLabel={serverLabel}
