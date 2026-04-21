@@ -48,6 +48,22 @@ export type HealthResponse = {
   version: string;
 };
 
+export type ConfigProviderModel = {
+  id: string;
+  name: string;
+};
+
+export type ConfigProvider = {
+  id: string;
+  name: string;
+  models: Record<string, ConfigProviderModel>;
+};
+
+export type ConfigProvidersResponse = {
+  providers: ConfigProvider[];
+  default: Record<string, string>;
+};
+
 export type SessionStatusMap = Record<string, string>;
 
 export type Session = {

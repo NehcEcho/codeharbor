@@ -8,6 +8,7 @@ import { ConnectPage } from "../pages/ConnectPage";
 import { WorkspacePage } from "../pages/WorkspacePage";
 import type {
   ChatMessage,
+  ConfigProvider,
   ConnectionState,
   PermissionRequest,
   QuestionRequest,
@@ -19,6 +20,9 @@ import type {
 export function MainLayout({
   isConnected,
   config,
+  modelProviders,
+  isLoadingModels,
+  modelError,
   connectStatus,
   connectionState,
   isConnecting,
@@ -54,6 +58,9 @@ export function MainLayout({
 }: {
   isConnected: boolean;
   config: ServerConfig;
+  modelProviders: ConfigProvider[];
+  isLoadingModels: boolean;
+  modelError: string | null;
   connectStatus: string;
   connectionState: ConnectionState;
   isConnecting: boolean;
@@ -107,6 +114,27 @@ export function MainLayout({
     return config.baseUrl.replace(/^https?:\/\//, "");
   }, [config.baseUrl]);
 
+  const modelOptions = useMemo(() => {
+    const options = [{ value: "", label: "跟随后端默认模型" }];
+
+    for (const provider of modelProviders) {
+      const models = Object.values(provider.models)
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((model) => ({
+          value: `${provider.id}/${model.id}`,
+          label: `${provider.name} / ${model.name}`,
+        }));
+
+      options.push(...models);
+    }
+
+    if (config.model && !options.some((option) => option.value === config.model)) {
+      options.push({ value: config.model, label: `${config.model} (当前值)` });
+    }
+
+    return options;
+  }, [config.model, modelProviders]);
+
   return (
     <div className="flex h-screen flex-col bg-[#FCFCFA] text-stone-800 font-sans overflow-hidden selection:bg-stone-200 selection:text-stone-900">
       <TopNav
@@ -122,7 +150,14 @@ export function MainLayout({
 
       <AnimatePresence>
         {isConnected && isSettingsOpen ? (
-          <SettingsPanel config={config} onConfigChange={onConfigChange} onClose={() => setIsSettingsOpen(false)} />
+          <SettingsPanel
+            config={config}
+            modelOptions={modelOptions}
+            isLoadingModels={isLoadingModels}
+            modelError={modelError}
+            onConfigChange={onConfigChange}
+            onClose={() => setIsSettingsOpen(false)}
+          />
         ) : null}
       </AnimatePresence>
 

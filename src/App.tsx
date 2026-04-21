@@ -4,6 +4,7 @@ import { opencodeApi } from "./lib/opencode";
 import { loadServerConfig, saveServerConfig } from "./lib/storage";
 import type {
   ChatMessage,
+  ConfigProvider,
   ConnectionState,
   MessageEnvelope,
   PermissionRequest,
@@ -220,6 +221,17 @@ function markSessionActivity(current: SessionActivityMap, sessionID: string, tim
   };
 }
 
+function normalizeModelValue(model: string, providers: ConfigProvider[]) {
+  const trimmed = model.trim();
+  if (!trimmed) return "";
+
+  const available = new Set(
+    providers.flatMap((provider) => Object.keys(provider.models).map((modelId) => `${provider.id}/${modelId}`)),
+  );
+
+  return available.has(trimmed) ? trimmed : "";
+}
+
 function App() {
   const [config, setConfig] = useState<ServerConfig>(() => loadServerConfig());
   const [connectStatus, setConnectStatus] = useState("尚未连接");
@@ -235,6 +247,9 @@ function App() {
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [diffCount, setDiffCount] = useState(0);
   const [events, setEvents] = useState<string[]>([]);
+  const [modelProviders, setModelProviders] = useState<ConfigProvider[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [modelError, setModelError] = useState<string | null>(null);
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
   const [respondingPermissionId, setRespondingPermissionId] = useState<string | null>(null);
   const [questionRequests, setQuestionRequests] = useState<QuestionRequest[]>([]);
@@ -255,6 +270,7 @@ function App() {
   const isSessionBusy = selectedSessionStatus === "busy";
   const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
   const queuedCount = queuedMessages.length;
+  const selectedModel = useMemo(() => normalizeModelValue(config.model, modelProviders), [config.model, modelProviders]);
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
   const isSessionStalled = Boolean(
     isSessionBusy &&
@@ -300,6 +316,28 @@ function App() {
     setPermissionRequests(requests.filter((item) => item.sessionID === selectedSessionId));
   }, [config, selectedSessionId]);
 
+  const refreshModelProviders = useCallback(async (targetConfig: ServerConfig = config) => {
+    if (!targetConfig.password) {
+      setModelProviders([]);
+      setModelError(null);
+      return;
+    }
+
+    setIsLoadingModels(true);
+
+    try {
+      const response = await opencodeApi.listConfigProviders(targetConfig);
+      setModelProviders(response.providers);
+      setModelError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "failed to load models";
+      setModelProviders([]);
+      setModelError(`模型列表加载失败: ${message}`);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, [config]);
+
   const handleRefreshCurrentSession = useCallback(async () => {
     if (isRefreshingSession) return;
 
@@ -335,6 +373,7 @@ function App() {
       saveServerConfig(normalized);
       setConnectionState("success");
       setConnectStatus(`已连接 ${normalized.baseUrl} · v${health.version}`);
+      await refreshModelProviders(normalized);
       await refreshSessions(normalized);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -343,7 +382,7 @@ function App() {
     } finally {
       setIsConnecting(false);
     }
-  }, [config, refreshSessions]);
+  }, [config, refreshModelProviders, refreshSessions]);
 
   const handleCreateSession = useCallback(async () => {
     const title = window.prompt("给新的远程会话取个名字", "Remote coding task");
@@ -365,7 +404,7 @@ function App() {
       sessionId: selectedSessionId,
       text,
       agent: selectedAgent as "build" | "plan",
-      model: config.model,
+      model: selectedModel,
       optimisticMessageId,
       createdAt: now,
     };
@@ -389,7 +428,7 @@ function App() {
       const label = queueSize > 1 ? `Queued message ${queueSize} for session` : "Queued message for session";
       return [label, ...current].slice(0, 20);
     });
-  }, [config.model, draft, queuedCount, selectedAgent, selectedSessionId]);
+  }, [draft, queuedCount, selectedAgent, selectedModel, selectedSessionId]);
 
   const dispatchQueuedMessage = useCallback(
     async (item: QueuedMessage) => {
@@ -554,6 +593,22 @@ function App() {
     void refreshPermissions();
     void refreshQuestions();
   }, [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, selectedSessionId]);
+
+  useEffect(() => {
+    if (connectionState !== "success") return;
+    void refreshModelProviders();
+  }, [connectionState, refreshModelProviders]);
+
+  useEffect(() => {
+    if (!config.model) return;
+
+    const normalizedModel = normalizeModelValue(config.model, modelProviders);
+    if (normalizedModel === config.model) return;
+
+    const nextConfig = { ...config, model: normalizedModel };
+    setConfig(nextConfig);
+    saveServerConfig(nextConfig);
+  }, [config, modelProviders]);
 
   useEffect(() => {
     if (connectionState !== "success" || !config.password) return;
@@ -854,6 +909,9 @@ function App() {
     <MainLayout
       isConnected={connectionState === "success"}
       config={config}
+      modelProviders={modelProviders}
+      isLoadingModels={isLoadingModels}
+      modelError={modelError}
       connectStatus={connectStatus}
       connectionState={connectionState}
       isConnecting={isConnecting}

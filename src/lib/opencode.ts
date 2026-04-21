@@ -1,5 +1,6 @@
 import type {
   AppEvent,
+  ConfigProvidersResponse,
   CreateSessionRequest,
   HealthResponse,
   MessageEnvelope,
@@ -113,6 +114,10 @@ async function streamRequest(
 export const opencodeApi = {
   health(config: ServerConfig) {
     return request<HealthResponse>(config, "/global/health");
+  },
+
+  listConfigProviders(config: ServerConfig) {
+    return request<ConfigProvidersResponse>(config, "/config/providers");
   },
 
   listSessions(config: ServerConfig) {
