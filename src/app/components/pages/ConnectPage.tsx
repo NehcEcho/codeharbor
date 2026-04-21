@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { motion } from "motion/react";
 import type { ConnectionState, ServerConfig } from "../../../types";
 import { AlertCircleIcon, GlobeIcon, LockIcon, ServerIcon, TerminalIcon } from "../ui/icons";
@@ -18,8 +17,6 @@ export function ConnectPage({
   onChange: (next: ServerConfig) => void;
   onConnect: () => void;
 }) {
-  const [showPassword, setShowPassword] = useState(false);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onConnect();
@@ -80,23 +77,20 @@ export function ConnectPage({
               </div>
 
               <div className="relative group">
-                <label className="text-[13px] font-medium text-stone-500 mb-1.5 block">Password</label>
+                <label className="text-[13px] font-medium text-stone-500 mb-1.5 block">Access Key</label>
                 <div className="relative">
                   <LockIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-stone-600 transition-colors" />
                   <input
-                    type={showPassword ? "text" : "password"}
+                    type="text"
                     value={config.password}
                     onChange={(e) => onChange({ ...config, password: e.target.value })}
-                    className="w-full pl-9 pr-14 py-3 bg-white border border-stone-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-stone-900/5 focus:border-stone-400 transition-all text-stone-700 shadow-sm text-sm"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    className="w-full pl-9 pr-3 py-3 bg-white border border-stone-200 rounded-xl focus:outline-none focus:ring-4 focus:ring-stone-900/5 focus:border-stone-400 transition-all text-stone-700 shadow-sm text-sm"
                     required
                   />
-                  <button
-                    type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-stone-500 hover:text-stone-800 px-2 py-1"
-                    onClick={() => setShowPassword((current) => !current)}
-                  >
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
                 </div>
               </div>
             </div>
