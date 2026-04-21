@@ -26,6 +26,7 @@ export const CheckCircleIcon = resolveIcon("CircleCheckBig");
 export const CheckIcon = resolveIcon("Check");
 export const ChevronDownIcon = resolveIcon("ChevronDown");
 export const ChevronRightIcon = resolveIcon("ChevronRight");
+export const FolderIcon = resolveIcon("FolderTree");
 export const GlobeIcon = resolveIcon("Globe");
 export const GitCommitIcon = resolveIcon("GitCommitHorizontal");
 export const LightbulbIcon = resolveIcon("Lightbulb");

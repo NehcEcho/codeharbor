@@ -7,6 +7,7 @@ import type {
   PermissionRequest,
   QuestionRequest,
   SendMessageRequest,
+  SkillItem,
   ServerConfig,
   Session,
   SessionStatusMap,
@@ -181,6 +182,10 @@ export const opencodeApi = {
 
   listQuestions(config: ServerConfig) {
     return request<QuestionRequest[]>(config, "/question");
+  },
+
+  listSkills(config: ServerConfig) {
+    return request<SkillItem[]>(config, "/skill");
   },
 
   replyQuestion(config: ServerConfig, requestId: string, answers: string[][]) {

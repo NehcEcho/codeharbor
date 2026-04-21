@@ -12,6 +12,7 @@ import type {
   ConnectionState,
   PermissionRequest,
   QuestionRequest,
+  SkillItem,
   ServerConfig,
   Session,
   SessionStatusMap,
@@ -23,6 +24,9 @@ export function MainLayout({
   modelProviders,
   isLoadingModels,
   modelError,
+  skills,
+  isLoadingSkills,
+  skillsError,
   connectStatus,
   connectionState,
   isConnecting,
@@ -66,6 +70,9 @@ export function MainLayout({
   modelProviders: ConfigProvider[];
   isLoadingModels: boolean;
   modelError: string | null;
+  skills: SkillItem[];
+  isLoadingSkills: boolean;
+  skillsError: string | null;
   connectStatus: string;
   connectionState: ConnectionState;
   isConnecting: boolean;
@@ -117,6 +124,9 @@ export function MainLayout({
     if (!isConnected) {
       setIsSettingsOpen(false);
     }
+    if (isConnected) {
+      setIsSettingsOpen(false);
+    }
   }, [isConnected]);
 
   const serverLabel = useMemo(() => {
@@ -165,6 +175,9 @@ export function MainLayout({
             modelOptions={modelOptions}
             isLoadingModels={isLoadingModels}
             modelError={modelError}
+            skills={skills}
+            isLoadingSkills={isLoadingSkills}
+            skillsError={skillsError}
             onConfigChange={onConfigChange}
             onClose={() => setIsSettingsOpen(false)}
           />

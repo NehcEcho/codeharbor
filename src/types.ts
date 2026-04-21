@@ -64,6 +64,13 @@ export type ConfigProvidersResponse = {
   default: Record<string, string>;
 };
 
+export type SkillItem = {
+  name: string;
+  description: string;
+  location: string;
+  content: string;
+};
+
 export type SessionStatusMap = Record<string, string>;
 
 export type Session = {

@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
-import type { ServerConfig } from "../../../types";
-import { BotIcon, XIcon } from "./icons";
+import { useEffect, useState } from "react";
+import type { ServerConfig, SkillItem } from "../../../types";
+import { BotIcon, ChevronDownIcon, FolderIcon, XIcon } from "./icons";
 
 type ModelOption = {
   value: string;
@@ -29,6 +30,9 @@ export function SettingsPanel({
   modelOptions,
   isLoadingModels,
   modelError,
+  skills,
+  isLoadingSkills,
+  skillsError,
   onConfigChange,
   onClose,
 }: {
@@ -36,9 +40,26 @@ export function SettingsPanel({
   modelOptions: ModelOption[];
   isLoadingModels: boolean;
   modelError: string | null;
+  skills: SkillItem[];
+  isLoadingSkills: boolean;
+  skillsError: string | null;
   onConfigChange: (next: ServerConfig) => void;
   onClose: () => void;
 }) {
+  const [isModelsOpen, setIsModelsOpen] = useState(true);
+  const [isSkillsOpen, setIsSkillsOpen] = useState(false);
+
+  useEffect(() => {
+    const { overflow } = document.body.style;
+    document.body.style.overflow = "hidden";
+    document.documentElement.classList.add("overflow-hidden", "touch-none");
+
+    return () => {
+      document.body.style.overflow = overflow;
+      document.documentElement.classList.remove("overflow-hidden", "touch-none");
+    };
+  }, []);
+
   return (
     <>
       <motion.div
@@ -53,7 +74,7 @@ export function SettingsPanel({
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 24 }}
         transition={{ type: "spring", damping: 24, stiffness: 240 }}
-        className="fixed right-4 top-16 z-50 w-[calc(100vw-2rem)] max-w-2xl rounded-2xl border border-stone-200 bg-[#FCFCFA] shadow-2xl"
+        className="fixed inset-x-4 top-16 bottom-4 z-50 flex max-h-[calc(100dvh-5rem)] w-auto max-w-2xl flex-col overflow-hidden overscroll-contain rounded-2xl border border-stone-200 bg-[#FCFCFA] shadow-2xl md:right-4 md:left-auto md:bottom-auto md:w-[calc(100vw-2rem)]"
       >
         <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
           <div>
@@ -70,19 +91,29 @@ export function SettingsPanel({
           </button>
         </div>
 
-        <div className="space-y-5 px-5 py-5">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-5 py-5 touch-pan-y">
           <section className="rounded-2xl border border-stone-200 bg-white px-4 py-4 shadow-sm">
-            <div className="flex items-start gap-3">
-              <div className="rounded-xl border border-stone-200 bg-stone-50 p-2 text-stone-700">
-                <BotIcon className="h-4 w-4" />
+            <button
+              type="button"
+              onClick={() => setIsModelsOpen((current) => !current)}
+              className="flex w-full items-start justify-between gap-3 text-left"
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl border border-stone-200 bg-stone-50 p-2 text-stone-700">
+                  <BotIcon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-medium text-stone-900">默认模型</h3>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">
+                    选择后会写入每次发送请求。留空则跟随 OpenCode 服务端默认模型。
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="text-sm font-medium text-stone-900">默认模型</h3>
-                <p className="mt-1 text-xs leading-5 text-stone-500">
-                  选择后会写入每次发送请求。留空则跟随 OpenCode 服务端默认模型。
-                </p>
+              <div className="flex items-center gap-2 pt-1 text-xs text-stone-400">
+                <span>{Math.max(modelOptions.length - 1, 0)} items</span>
+                <ChevronDownIcon className={`h-4 w-4 transition-transform ${isModelsOpen ? "rotate-180" : ""}`} />
               </div>
-            </div>
+            </button>
 
             <div className="mt-4 rounded-2xl border border-stone-200 bg-stone-50/70 p-3">
               <div className="flex items-center justify-between gap-3">
@@ -98,57 +129,114 @@ export function SettingsPanel({
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <label className="block text-[13px] font-medium text-stone-500">Models</label>
-              <p className="text-[11px] text-stone-400">
-                {isLoadingModels ? "Loading..." : `${modelOptions.length - 1} available`}
-              </p>
-            </div>
+            {isModelsOpen ? (
+              <>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <label className="block text-[13px] font-medium text-stone-500">Models</label>
+                  <p className="text-[11px] text-stone-400">
+                    {isLoadingModels ? "Loading..." : `${modelOptions.length - 1} available`}
+                  </p>
+                </div>
 
-            <div className="mt-3 max-h-[320px] overflow-y-auto pr-1">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {modelOptions.map((option) => {
-                  const active = option.value === config.model;
-                  const parsed = splitOptionLabel(option);
+                <div className="mt-3 max-h-[320px] overflow-y-auto pr-1">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {modelOptions.map((option) => {
+                      const active = option.value === config.model;
+                      const parsed = splitOptionLabel(option);
 
-                  return (
-                    <button
-                      key={option.value || "default"}
-                      type="button"
-                      onClick={() => onConfigChange({ ...config, model: option.value })}
-                      className={`group rounded-2xl border px-4 py-3 text-left transition-all ${
-                        active
-                          ? "border-stone-900 bg-stone-900 text-white shadow-lg shadow-stone-900/10"
-                          : "border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className={`text-[11px] font-medium uppercase tracking-[0.14em] ${active ? "text-stone-300" : "text-stone-400"}`}>
-                            {parsed.provider}
-                          </div>
-                          <div className="mt-1 truncate text-sm font-semibold">{parsed.model}</div>
-                        </div>
-                        <div
-                          className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${
-                            active ? "bg-white" : "bg-stone-300 group-hover:bg-stone-500"
+                      return (
+                        <button
+                          key={option.value || "default"}
+                          type="button"
+                          onClick={() => onConfigChange({ ...config, model: option.value })}
+                          className={`group rounded-2xl border px-4 py-3 text-left transition-all ${
+                            active
+                              ? "border-stone-900 bg-stone-900 text-white shadow-lg shadow-stone-900/10"
+                              : "border-stone-200 bg-white text-stone-700 hover:border-stone-300 hover:bg-stone-50"
                           }`}
-                        />
-                      </div>
-                      <div className={`mt-3 truncate text-xs ${active ? "text-stone-300" : "text-stone-500"}`}>
-                        {parsed.detail}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className={`text-[11px] font-medium uppercase tracking-[0.14em] ${active ? "text-stone-300" : "text-stone-400"}`}>
+                                {parsed.provider}
+                              </div>
+                              <div className="mt-1 truncate text-sm font-semibold">{parsed.model}</div>
+                            </div>
+                            <div
+                              className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${
+                                active ? "bg-white" : "bg-stone-300 group-hover:bg-stone-500"
+                              }`}
+                            />
+                          </div>
+                          <div className={`mt-3 truncate text-xs ${active ? "text-stone-300" : "text-stone-500"}`}>
+                            {parsed.detail}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-            <p className="mt-3 text-xs text-stone-500">
-              {isLoadingModels
-                ? "正在从 OpenCode 读取可用模型..."
-                : modelError || "模型列表来自 OpenCode /config/providers 接口。"}
-            </p>
+                <p className="mt-3 text-xs text-stone-500">
+                  {isLoadingModels
+                    ? "正在从 OpenCode 读取可用模型..."
+                    : modelError || "模型列表来自 OpenCode /config/providers 接口。"}
+                </p>
+              </>
+            ) : null}
+          </section>
+
+          <section className="rounded-2xl border border-stone-200 bg-white px-4 py-4 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setIsSkillsOpen((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl border border-stone-200 bg-stone-50 p-2 text-stone-700">
+                  <FolderIcon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-medium text-stone-900">Skills</h3>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">查看 OpenCode 当前可用的技能列表。</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-stone-400">
+                <span>{skills.length} items</span>
+                <ChevronDownIcon className={`h-4 w-4 transition-transform ${isSkillsOpen ? "rotate-180" : ""}`} />
+              </div>
+            </button>
+
+            {isSkillsOpen ? (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs text-stone-500">
+                  {isLoadingSkills ? "正在从 OpenCode 读取 skills..." : skillsError || "以下列表来自 OpenCode /skill 接口。"}
+                </p>
+
+                {skills.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50/60 px-4 py-5 text-sm text-stone-400">
+                    No skills available.
+                  </div>
+                ) : (
+                  <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+                    {skills.map((skill) => (
+                      <div key={skill.name} className="rounded-xl border border-stone-200 bg-stone-50/60 px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-stone-900">{skill.name}</div>
+                            <div className="mt-1 text-xs leading-5 text-stone-600">{skill.description}</div>
+                          </div>
+                          <div className="shrink-0 rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] text-stone-500">
+                            skill
+                          </div>
+                        </div>
+                        <div className="mt-2 break-all text-[11px] text-stone-400">{skill.location}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </section>
         </div>
       </motion.aside>

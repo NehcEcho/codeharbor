@@ -9,6 +9,7 @@ import type {
   MessageEnvelope,
   PermissionRequest,
   QuestionRequest,
+  SkillItem,
   ServerConfig,
   Session,
   SessionStatusMap,
@@ -257,6 +258,9 @@ function App() {
   const [modelProviders, setModelProviders] = useState<ConfigProvider[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [skills, setSkills] = useState<SkillItem[]>([]);
+  const [isLoadingSkills, setIsLoadingSkills] = useState(false);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
   const [retryingSessionId, setRetryingSessionId] = useState<string | null>(null);
   const [abortingSessionId, setAbortingSessionId] = useState<string | null>(null);
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
@@ -349,6 +353,28 @@ function App() {
     }
   }, [config]);
 
+  const refreshSkills = useCallback(async (targetConfig: ServerConfig = config) => {
+    if (!targetConfig.password) {
+      setSkills([]);
+      setSkillsError(null);
+      return;
+    }
+
+    setIsLoadingSkills(true);
+
+    try {
+      const response = await opencodeApi.listSkills(targetConfig);
+      setSkills(response);
+      setSkillsError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "failed to load skills";
+      setSkills([]);
+      setSkillsError(`Skills 加载失败: ${message}`);
+    } finally {
+      setIsLoadingSkills(false);
+    }
+  }, [config]);
+
   const handleRefreshCurrentSession = useCallback(async () => {
     if (isRefreshingSession) return;
 
@@ -385,6 +411,7 @@ function App() {
       setConnectionState("success");
       setConnectStatus(`已连接 ${normalized.baseUrl} · v${health.version}`);
       await refreshModelProviders(normalized);
+      await refreshSkills(normalized);
       await refreshSessions(normalized);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -393,7 +420,7 @@ function App() {
     } finally {
       setIsConnecting(false);
     }
-  }, [config, refreshModelProviders, refreshSessions]);
+  }, [config, refreshModelProviders, refreshSessions, refreshSkills]);
 
   const handleCreateSession = useCallback(async () => {
     const title = window.prompt("给新的远程会话取个名字", "Remote coding task");
@@ -686,6 +713,11 @@ function App() {
     if (connectionState !== "success") return;
     void refreshModelProviders();
   }, [connectionState, refreshModelProviders]);
+
+  useEffect(() => {
+    if (connectionState !== "success") return;
+    void refreshSkills();
+  }, [connectionState, refreshSkills]);
 
   useEffect(() => {
     if (!sessionModel) return;
@@ -999,6 +1031,9 @@ function App() {
       modelProviders={modelProviders}
       isLoadingModels={isLoadingModels}
       modelError={modelError}
+      skills={skills}
+      isLoadingSkills={isLoadingSkills}
+      skillsError={skillsError}
       connectStatus={connectStatus}
       connectionState={connectionState}
       isConnecting={isConnecting}
