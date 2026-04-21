@@ -55,6 +55,9 @@ export function MainLayout({
   permissionRequests,
   questionRequests,
   onConfigChange,
+  onCompactContext,
+  isCompactingContext,
+  canCompactContext,
   onConnect,
   onSessionSelect,
   onCreateSession,
@@ -106,6 +109,9 @@ export function MainLayout({
   permissionRequests: PermissionRequest[];
   questionRequests: QuestionRequest[];
   onConfigChange: (next: ServerConfig) => void;
+  onCompactContext: () => void;
+  isCompactingContext: boolean;
+  canCompactContext: boolean;
   onConnect: () => void;
   onSessionSelect: (sessionId: string) => void;
   onCreateSession: () => void;
@@ -190,6 +196,9 @@ export function MainLayout({
             isLoadingSkills={isLoadingSkills}
             skillsError={skillsError}
             onConfigChange={onConfigChange}
+            onCompactContext={onCompactContext}
+            isCompactingContext={isCompactingContext}
+            canCompactContext={canCompactContext}
             onClose={() => setIsSettingsOpen(false)}
           />
         ) : null}

@@ -174,6 +174,21 @@ export const opencodeApi = {
     });
   },
 
+  summarizeSession(
+    config: ServerConfig,
+    sessionId: string,
+    body: {
+      providerID: string;
+      modelID: string;
+      auto?: boolean;
+    },
+  ) {
+    return request<boolean>(config, `/session/${sessionId}/summarize`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
   getDiff(config: ServerConfig, sessionId: string) {
     return request<unknown[]>(config, `/session/${sessionId}/diff`);
   },

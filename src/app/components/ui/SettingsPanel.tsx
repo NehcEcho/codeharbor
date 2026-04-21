@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ServerConfig, SkillItem } from "../../../types";
-import { BotIcon, ChevronDownIcon, FolderIcon, XIcon } from "./icons";
+import { BotIcon, ChevronDownIcon, FolderIcon, RefreshCwIcon, XIcon } from "./icons";
 
 type ModelOption = {
   value: string;
@@ -34,6 +34,9 @@ export function SettingsPanel({
   isLoadingSkills,
   skillsError,
   onConfigChange,
+  onCompactContext,
+  isCompactingContext,
+  canCompactContext,
   onClose,
 }: {
   config: ServerConfig;
@@ -44,9 +47,13 @@ export function SettingsPanel({
   isLoadingSkills: boolean;
   skillsError: string | null;
   onConfigChange: (next: ServerConfig) => void;
+  onCompactContext: () => void;
+  isCompactingContext: boolean;
+  canCompactContext: boolean;
   onClose: () => void;
 }) {
   const [isModelsOpen, setIsModelsOpen] = useState(true);
+  const [isContextOpen, setIsContextOpen] = useState(true);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
 
   useEffect(() => {
@@ -183,6 +190,49 @@ export function SettingsPanel({
                     : modelError || "模型列表来自 OpenCode /config/providers 接口。"}
                 </p>
               </>
+            ) : null}
+          </section>
+
+          <section className="rounded-2xl border border-stone-200 bg-white px-4 py-4 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setIsContextOpen((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl border border-stone-200 bg-stone-50 p-2 text-stone-700">
+                  <RefreshCwIcon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-medium text-stone-900">上下文压缩</h3>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">对当前会话执行一次 `/compact`，压缩上下文并保留关键信息。</p>
+                </div>
+              </div>
+              <ChevronDownIcon className={`h-4 w-4 text-stone-400 transition-transform ${isContextOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {isContextOpen ? (
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3 text-xs leading-5 text-stone-500">
+                  该操作会调用 OpenCode 的会话总结接口，用当前模型或服务端默认模型来压缩上下文，适合长会话接近 context limit 时使用。
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onCompactContext}
+                  disabled={!canCompactContext || isCompactingContext}
+                  className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
+                    canCompactContext && !isCompactingContext
+                      ? "bg-stone-900 text-white hover:bg-stone-800"
+                      : "bg-stone-100 text-stone-400"
+                  }`}
+                >
+                  <RefreshCwIcon className={`h-4 w-4 ${isCompactingContext ? "animate-spin" : ""}`} />
+                  {isCompactingContext ? "正在压缩上下文..." : "压缩当前上下文"}
+                </button>
+
+                {!canCompactContext ? <p className="text-xs text-stone-400">请先选择一个 session。</p> : null}
+              </div>
             ) : null}
           </section>
 

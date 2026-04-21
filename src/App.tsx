@@ -240,6 +240,37 @@ function normalizeModelValue(model: string, providers: ConfigProvider[]) {
   return available.has(trimmed) ? trimmed : "";
 }
 
+function splitProviderModel(model: string) {
+  const slashIndex = model.indexOf("/");
+  if (slashIndex <= 0 || slashIndex === model.length - 1) return null;
+
+  return {
+    providerID: model.slice(0, slashIndex),
+    modelID: model.slice(slashIndex + 1),
+  };
+}
+
+function resolveCompactionModel(selectedModel: string, providers: ConfigProvider[], providerDefaults: Record<string, string>) {
+  const explicit = splitProviderModel(selectedModel);
+  if (explicit) return explicit;
+
+  for (const provider of providers) {
+    const defaultModelID = providerDefaults[provider.id];
+    if (defaultModelID && provider.models[defaultModelID]) {
+      return { providerID: provider.id, modelID: defaultModelID };
+    }
+  }
+
+  for (const provider of providers) {
+    const firstModelID = Object.keys(provider.models)[0];
+    if (firstModelID) {
+      return { providerID: provider.id, modelID: firstModelID };
+    }
+  }
+
+  return null;
+}
+
 function App() {
   const [config, setConfig] = useState<ServerConfig>(() => loadServerConfig());
   const [sessionModel, setSessionModel] = useState(() => loadSessionModel());
@@ -257,6 +288,7 @@ function App() {
   const [diffCount, setDiffCount] = useState(0);
   const [events, setEvents] = useState<string[]>([]);
   const [modelProviders, setModelProviders] = useState<ConfigProvider[]>([]);
+  const [providerDefaults, setProviderDefaults] = useState<Record<string, string>>({});
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
   const [commands, setCommands] = useState<CommandItem[]>([]);
@@ -339,6 +371,7 @@ function App() {
   const refreshModelProviders = useCallback(async (targetConfig: ServerConfig = config) => {
     if (!targetConfig.password) {
       setModelProviders([]);
+      setProviderDefaults({});
       setModelError(null);
       return;
     }
@@ -348,10 +381,12 @@ function App() {
     try {
       const response = await opencodeApi.listConfigProviders(targetConfig);
       setModelProviders(response.providers);
+      setProviderDefaults(response.default);
       setModelError(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : "failed to load models";
       setModelProviders([]);
+      setProviderDefaults({});
       setModelError(`模型列表加载失败: ${message}`);
     } finally {
       setIsLoadingModels(false);
@@ -571,6 +606,49 @@ function App() {
       setAbortingSessionId((current) => (current === selectedSessionId ? null : current));
     }
   }, [abortingSessionId, config, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
+
+  const handleCompactContext = useCallback(async () => {
+    if (!selectedSessionId || runningCommandName) return;
+
+    const targetModel = resolveCompactionModel(selectedModel, modelProviders, providerDefaults);
+    if (!targetModel) {
+      setEvents((current) => ["Compact failed - no available model", ...current].slice(0, 20));
+      return;
+    }
+
+    setRunningCommandName("compact");
+    setIsSending(true);
+    setEvents((current) => ["Running command - /compact", ...current].slice(0, 20));
+
+    try {
+      await opencodeApi.summarizeSession(config, selectedSessionId, {
+        providerID: targetModel.providerID,
+        modelID: targetModel.modelID,
+      });
+
+      setAwaitingSessionCompletion({
+        sessionId: selectedSessionId,
+        seenBusy: false,
+        startedAt: Date.now(),
+      });
+
+      await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+
+      window.setTimeout(() => {
+        void refreshSessions();
+        void refreshMessages();
+        void refreshDiff();
+        void refreshPermissions();
+        void refreshQuestions();
+      }, 1200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "compact failed";
+      setEvents((current) => [`Compact failed - ${message}`, ...current].slice(0, 20));
+    } finally {
+      setRunningCommandName(null);
+      setIsSending(false);
+    }
+  }, [config, modelProviders, providerDefaults, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, runningCommandName, selectedModel, selectedSessionId]);
 
   const handleRunCommand = useCallback(
     async (commandName: string, argumentsText: string) => {
@@ -1148,6 +1226,9 @@ function App() {
       isAbortingSession={abortingSessionId === selectedSessionId}
       runningCommandName={runningCommandName}
       onConfigChange={handleConfigChange}
+      onCompactContext={() => void handleCompactContext()}
+      isCompactingContext={runningCommandName === "compact"}
+      canCompactContext={Boolean(selectedSessionId)}
       onConnect={handleConnect}
       onSessionSelect={setSelectedSessionId}
       onCreateSession={handleCreateSession}
