@@ -120,7 +120,7 @@ export function CommandInput({
 
         <div className="flex items-center justify-between gap-2 px-3 pb-3">
           <div className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap">
-            <button className="p-2 text-stone-400 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer active:scale-95" title="Attach file">
+            <button className="rounded-lg p-1.5 text-stone-400 transition-colors cursor-pointer active:scale-95 hover:bg-stone-100 hover:text-stone-700" title="Attach file">
               <PaperclipIcon className="w-5 h-5" />
             </button>
             <div className="h-4 w-[1px] bg-stone-200 mx-1" />
@@ -129,7 +129,7 @@ export function CommandInput({
               <button
                 onClick={() => setIsCommandMenuOpen((current) => !current)}
                 className={clsx(
-                  "flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors cursor-pointer",
+                  "flex h-8 items-center gap-1 rounded-lg border px-2 text-xs font-medium transition-colors cursor-pointer",
                   runningCommandName
                     ? "border-stone-900 bg-stone-900 text-white hover:bg-stone-800"
                     : "border-stone-200 bg-white text-stone-600 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-900",
@@ -275,16 +275,16 @@ export function CommandInput({
               <button
                 onClick={() => setIsAgentMenuOpen(!isAgentMenuOpen)}
                 className={clsx(
-                  "flex h-9 items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer",
+                  "flex h-8 items-center gap-1 px-1.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
                   agent === "build"
                     ? "text-amber-700 bg-amber-50 hover:bg-amber-100"
                     : "text-blue-700 bg-blue-50 hover:bg-blue-100",
                 )}
                 type="button"
               >
-                {agent === "build" ? <WrenchIcon className="w-4 h-4" /> : <LightbulbIcon className="w-4 h-4" />}
+                {agent === "build" ? <WrenchIcon className="h-3.5 w-3.5" /> : <LightbulbIcon className="h-3.5 w-3.5" />}
                 {agent === "build" ? "Build" : "Plan"}
-                <Settings2Icon className="w-3 h-3 opacity-60" />
+                <Settings2Icon className="h-2.5 w-2.5 opacity-60" />
               </button>
 
               <AnimatePresence>
@@ -294,7 +294,7 @@ export function CommandInput({
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="fixed inset-0 z-40"
+                      className="fixed inset-0 z-50"
                       onClick={() => setIsAgentMenuOpen(false)}
                     />
                     <motion.div
@@ -302,7 +302,7 @@ export function CommandInput({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ type: "spring", duration: 0.3 }}
-                      className="absolute bottom-full left-0 mb-2 w-52 bg-white border border-stone-200 rounded-xl shadow-xl z-50 p-1.5 overflow-hidden"
+                      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+6rem)] z-[60] overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl md:absolute md:bottom-full md:left-0 md:right-auto md:mb-2 md:w-48"
                     >
                       <button
                         onClick={() => {
@@ -358,11 +358,11 @@ export function CommandInput({
               <button
                 onClick={() => setIsActionMenuOpen((current) => !current)}
                 className={clsx(
-                  "relative inline-flex h-10 items-center justify-center rounded-xl border px-3 transition-all",
+                  "relative inline-flex h-8 items-center justify-center rounded-lg border px-2.5 transition-all",
                   isActionMenuOpen
                     ? "border-stone-300 bg-stone-100 text-stone-700"
                     : isBusy
-                      ? "border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100"
+                      ? "border-stone-300 bg-stone-100 text-stone-700 hover:border-stone-400 hover:bg-stone-200/70"
                       : canRetryLastMessage
                         ? "border-stone-300 bg-stone-100 text-stone-700 hover:border-stone-400 hover:bg-stone-200/70"
                     : "border-stone-200 bg-white text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700",
@@ -374,9 +374,7 @@ export function CommandInput({
                 {canRetryLastMessage && !isBusy ? (
                   <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-stone-500" />
                 ) : null}
-                {isBusy ? (
-                  <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-rose-100" />
-                ) : null}
+                {isBusy ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-stone-500" /> : null}
               </button>
 
               <AnimatePresence>
@@ -394,7 +392,7 @@ export function CommandInput({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ type: "spring", duration: 0.25 }}
-                      className="absolute bottom-full right-0 z-50 mb-2 w-44 overflow-hidden rounded-2xl border border-stone-200 bg-white p-1.5 shadow-xl"
+                      className="absolute bottom-full right-0 z-50 mb-2 w-40 overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl"
                     >
                       <button
                         onClick={() => {
@@ -403,7 +401,7 @@ export function CommandInput({
                         }}
                         disabled={!canRetryLastMessage || isRetryingLastMessage || isAbortingSession}
                         className={clsx(
-                          "flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                            "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
                           canRetryLastMessage && !isRetryingLastMessage && !isAbortingSession
                             ? "text-stone-700 hover:bg-stone-50"
                             : "text-stone-400",
@@ -424,10 +422,10 @@ export function CommandInput({
                         }}
                         disabled={!isBusy || isAbortingSession}
                         className={clsx(
-                          "mt-1 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
-                          isBusy && !isAbortingSession
-                            ? "text-rose-700 hover:bg-rose-50"
-                            : "text-stone-400",
+                            "mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
+                            isBusy && !isAbortingSession
+                              ? "text-stone-700 hover:bg-stone-50"
+                              : "text-stone-400",
                         )}
                         type="button"
                       >
@@ -447,7 +445,7 @@ export function CommandInput({
               onClick={onSend}
               disabled={!value.trim()}
               className={clsx(
-                "rounded-xl px-3 py-2.5 transition-all cursor-pointer flex items-center justify-center",
+                "flex items-center justify-center rounded-lg px-2.5 py-2 transition-all cursor-pointer",
                 value.trim()
                   ? "bg-stone-900 text-white hover:bg-stone-800 shadow-sm active:scale-95"
                   : "bg-stone-100 text-stone-400",
