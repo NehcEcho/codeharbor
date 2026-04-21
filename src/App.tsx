@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "./app/components/layouts/MainLayout";
 import { opencodeApi } from "./lib/opencode";
-import { loadServerConfig, saveServerConfig } from "./lib/storage";
+import { loadServerConfig, loadSessionModel, saveServerConfig, saveSessionModel } from "./lib/storage";
 import type {
   ChatMessage,
   ConfigProvider,
@@ -240,6 +240,7 @@ function normalizeModelValue(model: string, providers: ConfigProvider[]) {
 
 function App() {
   const [config, setConfig] = useState<ServerConfig>(() => loadServerConfig());
+  const [sessionModel, setSessionModel] = useState(() => loadSessionModel());
   const [connectStatus, setConnectStatus] = useState("尚未连接");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [isConnecting, setIsConnecting] = useState(false);
@@ -279,7 +280,7 @@ function App() {
   const isSessionBusy = selectedSessionStatus === "busy";
   const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
   const queuedCount = queuedMessages.length;
-  const selectedModel = useMemo(() => normalizeModelValue(config.model, modelProviders), [config.model, modelProviders]);
+  const selectedModel = useMemo(() => normalizeModelValue(sessionModel, modelProviders), [modelProviders, sessionModel]);
   const selectedLastSentDraft = selectedSessionId ? lastSentDraftBySession[selectedSessionId] || null : null;
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
   const isSessionStalled = Boolean(
@@ -403,6 +404,18 @@ function App() {
     setSelectedSessionId(created.id);
   }, [config, refreshSessions]);
 
+  const handleConfigChange = useCallback((next: ServerConfig) => {
+    if (next.model !== sessionModel) {
+      setSessionModel(next.model);
+      saveSessionModel(next.model);
+    }
+
+    setConfig((current) => ({
+      ...next,
+      model: current.model,
+    }));
+  }, [sessionModel]);
+
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!selectedSessionId || !text) return;
@@ -431,6 +444,7 @@ function App() {
       ...current,
       [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
     }));
+    saveSessionModel(selectedModel);
     setLastSentDraftBySession((current) => ({
       ...current,
       [selectedSessionId]: {
@@ -674,15 +688,14 @@ function App() {
   }, [connectionState, refreshModelProviders]);
 
   useEffect(() => {
-    if (!config.model) return;
+    if (!sessionModel) return;
 
-    const normalizedModel = normalizeModelValue(config.model, modelProviders);
-    if (normalizedModel === config.model) return;
+    const normalizedModel = normalizeModelValue(sessionModel, modelProviders);
+    if (normalizedModel === sessionModel) return;
 
-    const nextConfig = { ...config, model: normalizedModel };
-    setConfig(nextConfig);
-    saveServerConfig(nextConfig);
-  }, [config, modelProviders]);
+    setSessionModel(normalizedModel);
+    saveSessionModel(normalizedModel);
+  }, [modelProviders, sessionModel]);
 
   useEffect(() => {
     if (connectionState !== "success" || !config.password) return;
@@ -982,7 +995,7 @@ function App() {
   return (
     <MainLayout
       isConnected={connectionState === "success"}
-      config={config}
+      config={{ ...config, model: sessionModel }}
       modelProviders={modelProviders}
       isLoadingModels={isLoadingModels}
       modelError={modelError}
@@ -1008,7 +1021,7 @@ function App() {
       canRetryLastMessage={Boolean(selectedLastSentDraft?.text.trim())}
       isRetryingLastMessage={retryingSessionId === selectedSessionId}
       isAbortingSession={abortingSessionId === selectedSessionId}
-      onConfigChange={setConfig}
+      onConfigChange={handleConfigChange}
       onConnect={handleConnect}
       onSessionSelect={setSelectedSessionId}
       onCreateSession={handleCreateSession}
