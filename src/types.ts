@@ -5,6 +5,11 @@ export type ServerConfig = {
   model: string;
 };
 
+export type OpenCodeConfig = {
+  model?: string;
+  [key: string]: unknown;
+};
+
 export type QuestionOption = {
   label: string;
   description: string;

@@ -1,7 +1,6 @@
 import type { ServerConfig } from "../types";
 
 const STORAGE_KEY = "opencode-remote-config";
-const SESSION_MODEL_KEY = "opencode-session-model";
 
 export function loadServerConfig(): ServerConfig {
   const fallback: ServerConfig = {
@@ -35,25 +34,4 @@ export function saveServerConfig(config: ServerConfig) {
       password: config.password,
     }),
   );
-}
-
-export function loadSessionModel() {
-  try {
-    return window.sessionStorage.getItem(SESSION_MODEL_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-export function saveSessionModel(model: string) {
-  try {
-    if (model) {
-      window.sessionStorage.setItem(SESSION_MODEL_KEY, model);
-      return;
-    }
-
-    window.sessionStorage.removeItem(SESSION_MODEL_KEY);
-  } catch {
-    // Ignore session storage failures and keep config in memory.
-  }
 }

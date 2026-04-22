@@ -54,6 +54,7 @@ export function MainLayout({
   events,
   permissionRequests,
   questionRequests,
+  onModelChange,
   onConfigChange,
   onCompactContext,
   isCompactingContext,
@@ -108,6 +109,7 @@ export function MainLayout({
   events: string[];
   permissionRequests: PermissionRequest[];
   questionRequests: QuestionRequest[];
+  onModelChange: (model: string) => void;
   onConfigChange: (next: ServerConfig) => void;
   onCompactContext: () => void;
   isCompactingContext: boolean;
@@ -198,7 +200,7 @@ export function MainLayout({
             skills={skills}
             isLoadingSkills={isLoadingSkills}
             skillsError={skillsError}
-            onConfigChange={onConfigChange}
+            onModelChange={onModelChange}
             onCompactContext={onCompactContext}
             isCompactingContext={isCompactingContext}
             canCompactContext={canCompactContext}

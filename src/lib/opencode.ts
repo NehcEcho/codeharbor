@@ -5,6 +5,7 @@ import type {
   CreateSessionRequest,
   HealthResponse,
   MessageEnvelope,
+  OpenCodeConfig,
   PermissionRequest,
   QuestionRequest,
   SendMessageRequest,
@@ -116,6 +117,17 @@ async function streamRequest(
 export const opencodeApi = {
   health(config: ServerConfig) {
     return request<HealthResponse>(config, "/global/health");
+  },
+
+  getConfig(config: ServerConfig) {
+    return request<OpenCodeConfig>(config, "/config");
+  },
+
+  updateConfig(config: ServerConfig, body: OpenCodeConfig) {
+    return request<OpenCodeConfig>(config, "/config", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
   },
 
   listConfigProviders(config: ServerConfig) {

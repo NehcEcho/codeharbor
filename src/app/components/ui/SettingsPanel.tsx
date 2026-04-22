@@ -33,7 +33,7 @@ export function SettingsPanel({
   skills,
   isLoadingSkills,
   skillsError,
-  onConfigChange,
+  onModelChange,
   onCompactContext,
   isCompactingContext,
   canCompactContext,
@@ -46,7 +46,7 @@ export function SettingsPanel({
   skills: SkillItem[];
   isLoadingSkills: boolean;
   skillsError: string | null;
-  onConfigChange: (next: ServerConfig) => void;
+  onModelChange: (model: string) => void;
   onCompactContext: () => void;
   isCompactingContext: boolean;
   canCompactContext: boolean;
@@ -110,10 +110,10 @@ export function SettingsPanel({
                   <BotIcon className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-sm font-medium text-stone-900">默认模型</h3>
-                  <p className="mt-1 text-xs leading-5 text-stone-500">
-                    选择后会写入每次发送请求。留空则跟随 OpenCode 服务端默认模型。
-                  </p>
+                   <h3 className="text-sm font-medium text-stone-900">默认模型</h3>
+                   <p className="mt-1 text-xs leading-5 text-stone-500">
+                     前端会读取后端当前默认模型；选择后会直接写回 OpenCode 的默认模型配置。
+                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2 pt-1 text-xs text-stone-400">
@@ -155,7 +155,7 @@ export function SettingsPanel({
                         <button
                           key={option.value || "default"}
                           type="button"
-                          onClick={() => onConfigChange({ ...config, model: option.value })}
+                          onClick={() => onModelChange(option.value)}
                           className={`group rounded-2xl border px-4 py-3 text-left transition-all ${
                             active
                               ? "border-stone-900 bg-stone-900 text-white shadow-lg shadow-stone-900/10"

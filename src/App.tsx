@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "./app/components/layouts/MainLayout";
 import { opencodeApi } from "./lib/opencode";
-import { loadServerConfig, loadSessionModel, saveServerConfig, saveSessionModel } from "./lib/storage";
+import { loadServerConfig, saveServerConfig } from "./lib/storage";
 import type {
   ChatMessage,
   CommandItem,
   ConfigProvider,
   ConnectionState,
   MessageEnvelope,
+  OpenCodeConfig,
   PermissionRequest,
   QuestionRequest,
   SkillItem,
@@ -273,7 +274,6 @@ function resolveCompactionModel(selectedModel: string, providers: ConfigProvider
 
 function App() {
   const [config, setConfig] = useState<ServerConfig>(() => loadServerConfig());
-  const [sessionModel, setSessionModel] = useState(() => loadSessionModel());
   const [connectStatus, setConnectStatus] = useState("尚未连接");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [isConnecting, setIsConnecting] = useState(false);
@@ -321,7 +321,7 @@ function App() {
   const isSessionBusy = selectedSessionStatus === "busy";
   const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
   const queuedCount = queuedMessages.length;
-  const selectedModel = useMemo(() => normalizeModelValue(sessionModel, modelProviders), [modelProviders, sessionModel]);
+  const selectedModel = useMemo(() => normalizeModelValue(config.model, modelProviders), [config.model, modelProviders]);
   const selectedLastSentDraft = selectedSessionId ? lastSentDraftBySession[selectedSessionId] || null : null;
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
   const isSessionStalled = Boolean(
@@ -367,6 +367,18 @@ function App() {
     const requests = await opencodeApi.listPermissions(config);
     setPermissionRequests(requests.filter((item) => item.sessionID === selectedSessionId));
   }, [config, selectedSessionId]);
+
+  const refreshRemoteConfig = useCallback(async (targetConfig: ServerConfig = config) => {
+    if (!targetConfig.password) {
+      setConfig((current) => ({ ...current, model: "" }));
+      return null;
+    }
+
+    const remoteConfig = await opencodeApi.getConfig(targetConfig);
+    const nextModel = typeof remoteConfig.model === "string" ? remoteConfig.model : "";
+    setConfig((current) => ({ ...current, model: nextModel }));
+    return remoteConfig;
+  }, [config]);
 
   const refreshModelProviders = useCallback(async (targetConfig: ServerConfig = config) => {
     if (!targetConfig.password) {
@@ -468,10 +480,11 @@ function App() {
 
     try {
       const health = await opencodeApi.health(normalized);
-      setConfig(normalized);
+      setConfig((current) => ({ ...current, ...normalized }));
       saveServerConfig(normalized);
       setConnectionState("success");
       setConnectStatus(`已连接 ${normalized.baseUrl} · v${health.version}`);
+      await refreshRemoteConfig(normalized);
       await refreshCommands(normalized);
       await refreshModelProviders(normalized);
       await refreshSkills(normalized);
@@ -483,7 +496,7 @@ function App() {
     } finally {
       setIsConnecting(false);
     }
-  }, [config, refreshCommands, refreshModelProviders, refreshSessions, refreshSkills]);
+  }, [config, refreshCommands, refreshModelProviders, refreshRemoteConfig, refreshSessions, refreshSkills]);
 
   const handleCreateSession = useCallback(async () => {
     const title = window.prompt("给新的远程会话取个名字", "Remote coding task");
@@ -495,16 +508,34 @@ function App() {
   }, [config, refreshSessions]);
 
   const handleConfigChange = useCallback((next: ServerConfig) => {
-    if (next.model !== sessionModel) {
-      setSessionModel(next.model);
-      saveSessionModel(next.model);
-    }
+    setConfig(next);
+  }, []);
 
-    setConfig((current) => ({
-      ...next,
-      model: current.model,
-    }));
-  }, [sessionModel]);
+  const handleModelChange = useCallback(
+    async (model: string) => {
+      const previousModel = config.model;
+      setConfig((current) => ({ ...current, model }));
+
+      try {
+        const currentRemoteConfig = (await opencodeApi.getConfig(config)) as OpenCodeConfig;
+        const nextRemoteConfig = await opencodeApi.updateConfig(config, {
+          ...currentRemoteConfig,
+          model,
+        });
+
+        setConfig((current) => ({
+          ...current,
+          model: typeof nextRemoteConfig.model === "string" ? nextRemoteConfig.model : model,
+        }));
+        setEvents((current) => [`Default model updated - ${model || "server default"}`, ...current].slice(0, 20));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "model update failed";
+        setConfig((current) => ({ ...current, model: previousModel }));
+        setEvents((current) => [`Default model update failed - ${message}`, ...current].slice(0, 20));
+      }
+    },
+    [config],
+  );
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
@@ -534,7 +565,6 @@ function App() {
       ...current,
       [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
     }));
-    saveSessionModel(selectedModel);
     setLastSentDraftBySession((current) => ({
       ...current,
       [selectedSessionId]: {
@@ -656,7 +686,6 @@ function App() {
 
       setRunningCommandName(commandName);
       setIsSending(true);
-      saveSessionModel(selectedModel);
       setEvents((current) => [`Running command - /${commandName} ${argumentsText}`.trim(), ...current].slice(0, 20));
 
       try {
@@ -871,6 +900,11 @@ function App() {
 
   useEffect(() => {
     if (connectionState !== "success") return;
+    void refreshRemoteConfig();
+  }, [connectionState, refreshRemoteConfig]);
+
+  useEffect(() => {
+    if (connectionState !== "success") return;
     void refreshModelProviders();
   }, [connectionState, refreshModelProviders]);
 
@@ -885,14 +919,13 @@ function App() {
   }, [connectionState, refreshSkills]);
 
   useEffect(() => {
-    if (!sessionModel) return;
+    if (!config.model) return;
 
-    const normalizedModel = normalizeModelValue(sessionModel, modelProviders);
-    if (normalizedModel === sessionModel) return;
+    const normalizedModel = normalizeModelValue(config.model, modelProviders);
+    if (normalizedModel === config.model) return;
 
-    setSessionModel(normalizedModel);
-    saveSessionModel(normalizedModel);
-  }, [modelProviders, sessionModel]);
+    setConfig((current) => ({ ...current, model: normalizedModel }));
+  }, [config.model, modelProviders]);
 
   useEffect(() => {
     if (connectionState !== "success" || !config.password) return;
@@ -1192,7 +1225,7 @@ function App() {
   return (
     <MainLayout
       isConnected={connectionState === "success"}
-      config={{ ...config, model: sessionModel }}
+      config={config}
       modelProviders={modelProviders}
       isLoadingModels={isLoadingModels}
       modelError={modelError}
@@ -1226,6 +1259,7 @@ function App() {
       isAbortingSession={abortingSessionId === selectedSessionId}
       runningCommandName={runningCommandName}
       onConfigChange={handleConfigChange}
+      onModelChange={(model) => void handleModelChange(model)}
       onCompactContext={() => void handleCompactContext()}
       isCompactingContext={runningCommandName === "compact"}
       canCompactContext={Boolean(selectedSessionId)}
