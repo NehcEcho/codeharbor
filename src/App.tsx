@@ -150,6 +150,13 @@ function appendMessageDelta(
   });
 }
 
+function appendMessageDeltas(
+  current: ChatMessage[],
+  payloads: Array<{ messageID?: string; partID?: string; field?: string; delta?: string }>,
+) {
+  return payloads.reduce((messages, payload) => appendMessageDelta(messages, payload), current);
+}
+
 function reconcilePending(current: ChatMessage[]) {
   const confirmedUserSignatures = new Set(
     current.filter((message) => message.role === "user" && !message.isPending).map(messageSignature),
@@ -320,6 +327,8 @@ function App() {
   const [clock, setClock] = useState(() => Date.now());
   const refreshTimeoutRef = useRef<number | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const messageDeltaQueueRef = useRef<Array<{ messageID?: string; partID?: string; field?: string; delta?: string }>>([]);
+  const messageDeltaFlushRef = useRef<number | null>(null);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) || null,
@@ -937,6 +946,16 @@ function App() {
   }, [config.model, modelProviders]);
 
   useEffect(() => {
+    return () => {
+      if (messageDeltaFlushRef.current) {
+        window.clearTimeout(messageDeltaFlushRef.current);
+        messageDeltaFlushRef.current = null;
+      }
+      messageDeltaQueueRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
     if (connectionState !== "success" || !config.password) return;
 
     const controller = new AbortController();
@@ -947,6 +966,19 @@ function App() {
         window.clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+    };
+
+    const flushMessageDeltas = () => {
+      messageDeltaFlushRef.current = null;
+      const queued = messageDeltaQueueRef.current;
+      if (queued.length === 0) return;
+      messageDeltaQueueRef.current = [];
+      setMessages((current) => appendMessageDeltas(current, queued));
+    };
+
+    const scheduleMessageDeltaFlush = () => {
+      if (messageDeltaFlushRef.current) return;
+      messageDeltaFlushRef.current = window.setTimeout(flushMessageDeltas, 48);
     };
 
     const scheduleRefresh = () => {
@@ -1004,14 +1036,13 @@ function App() {
             if (payloadType === "message.part.delta") {
               const sessionID = properties.sessionID as string | undefined;
               if (sessionID === selectedSessionId) {
-                setMessages((current) =>
-                  appendMessageDelta(current, {
-                    messageID: properties.messageID as string | undefined,
-                    partID: properties.partID as string | undefined,
-                    field: properties.field as string | undefined,
-                    delta: properties.delta as string | undefined,
-                  }),
-                );
+                messageDeltaQueueRef.current.push({
+                  messageID: properties.messageID as string | undefined,
+                  partID: properties.partID as string | undefined,
+                  field: properties.field as string | undefined,
+                  delta: properties.delta as string | undefined,
+                });
+                scheduleMessageDeltaFlush();
               }
               if (sessionID) {
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
@@ -1166,6 +1197,11 @@ function App() {
       isDisposed = true;
       controller.abort();
       clearReconnectTimer();
+      if (messageDeltaFlushRef.current) {
+        window.clearTimeout(messageDeltaFlushRef.current);
+        messageDeltaFlushRef.current = null;
+      }
+      messageDeltaQueueRef.current = [];
       if (refreshTimeoutRef.current) {
         window.clearTimeout(refreshTimeoutRef.current);
         refreshTimeoutRef.current = null;
