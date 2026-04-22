@@ -20,6 +20,33 @@ type TextSegment =
   | { type: "text"; value: string }
   | { type: "code"; value: string; language: string };
 
+function formatCompactThousands(value: number) {
+  if (value >= 1000) {
+    const compact = value / 1000;
+    return `${compact >= 10 ? compact.toFixed(0) : compact.toFixed(1)}k`;
+  }
+  return String(value);
+}
+
+function formatUsageSummary(message: ChatMessage) {
+  if (!message.usage) return null;
+
+  const parts = [`${formatCompactThousands(message.usage.contextInput)} ctx`];
+
+  if (message.usage.output > 0) {
+    parts.push(`${formatCompactThousands(message.usage.output)} out`);
+  }
+
+  if (message.usage.reasoning > 0) {
+    parts.push(`${formatCompactThousands(message.usage.reasoning)} think`);
+  }
+
+  return {
+    compact: `${formatCompactThousands(message.usage.contextInput)} ctx`,
+    detail: parts.join(" · "),
+  };
+}
+
 function extractBody(message: ChatMessage) {
   if (message.role === "permission") return "";
   return message.parts
@@ -330,6 +357,7 @@ export function MessageBubble({ message, isLatest = false }: { message: ChatMess
   const contentSections = splitContentSections(content);
   const toolParts = extractToolParts(message);
   const time = message.timestampLabel;
+  const usageSummary = !isUser && !isTool ? formatUsageSummary(message) : null;
 
   return (
     <div className="flex gap-4 sm:gap-5 group">
@@ -352,12 +380,18 @@ export function MessageBubble({ message, isLatest = false }: { message: ChatMess
 
       <div className="flex-1 min-w-0 space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between sm:gap-4 -mt-1 mb-2">
-          <div className="font-semibold text-[15px] text-stone-900 flex items-center gap-2">
+          <div className="font-semibold text-[15px] text-stone-900 flex flex-wrap items-center gap-2">
             {isUser ? "You" : isTool ? "Tool Execution" : "OpenCode"}
+            {usageSummary ? (
+              <span className="inline-flex sm:hidden items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-medium text-stone-500">
+                {usageSummary.compact}
+              </span>
+            ) : null}
           </div>
-          <span className="text-xs text-stone-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap hidden sm:inline-block">
-            {time}
-          </span>
+          <div className="flex items-center gap-2 text-xs text-stone-400 whitespace-nowrap hidden sm:flex">
+            {usageSummary ? <span>{usageSummary.detail}</span> : null}
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity">{time}</span>
+          </div>
         </div>
 
         {renderContentSections({

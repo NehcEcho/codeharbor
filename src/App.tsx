@@ -29,6 +29,19 @@ function formatTimestamp(timestamp?: number) {
   return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function mapMessageUsage(info: MessageEnvelope["info"]): ChatMessage["usage"] | undefined {
+  if (!info.tokens) return undefined;
+
+  return {
+    contextInput: info.tokens.input,
+    output: info.tokens.output,
+    reasoning: info.tokens.reasoning,
+    cacheRead: info.tokens.cache.read,
+    cacheWrite: info.tokens.cache.write,
+    total: info.tokens.total,
+  };
+}
+
 function mapMessageEnvelope(message: MessageEnvelope): ChatMessage {
   const role = (message.info.role || "assistant") as ChatMessage["role"];
   return {
@@ -36,6 +49,7 @@ function mapMessageEnvelope(message: MessageEnvelope): ChatMessage {
     role,
     parts: message.parts,
     timestampLabel: formatTimestamp(message.info.time?.created || message.info.time?.updated),
+    usage: mapMessageUsage(message.info),
     status: role === "tool" ? "success" : undefined,
   };
 }
@@ -89,6 +103,7 @@ function upsertMessageInfo(current: ChatMessage[], info: MessageEnvelope["info"]
             ...message,
             role,
             timestampLabel: formatTimestamp(info.time?.created || info.time?.updated),
+            usage: mapMessageUsage(info),
             isPending: false,
           }
         : message,
@@ -97,14 +112,15 @@ function upsertMessageInfo(current: ChatMessage[], info: MessageEnvelope["info"]
 
   return sortMessages([
     ...current,
-    {
-      id: info.id,
-      role,
-      parts: [],
-      timestampLabel: formatTimestamp(info.time?.created || info.time?.updated),
-      status: role === "tool" ? "success" : undefined,
-    },
-  ]);
+      {
+        id: info.id,
+        role,
+        parts: [],
+        timestampLabel: formatTimestamp(info.time?.created || info.time?.updated),
+        usage: mapMessageUsage(info),
+        status: role === "tool" ? "success" : undefined,
+      },
+    ]);
 }
 
 function upsertMessagePart(current: ChatMessage[], part: { messageID?: string; id?: string; type?: string; text?: string }) {

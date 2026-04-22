@@ -118,6 +118,17 @@ export type MessageEnvelope = {
     id: string;
     role?: string;
     sessionID?: string;
+    cost?: number;
+    tokens?: {
+      total?: number;
+      input: number;
+      output: number;
+      reasoning: number;
+      cache: {
+        read: number;
+        write: number;
+      };
+    };
     time?: {
       created?: number;
       updated?: number;
@@ -136,6 +147,14 @@ export type ChatMessage = {
   role: "user" | "assistant" | "tool" | "permission";
   parts: MessagePart[];
   timestampLabel: string;
+  usage?: {
+    contextInput: number;
+    output: number;
+    reasoning: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total?: number;
+  };
   status?: "success" | "approved" | "denied" | "pending" | "running";
   isPending?: boolean;
 };
