@@ -21,17 +21,23 @@ type TextSegment =
   | { type: "code"; value: string; language: string };
 
 function formatCompactThousands(value: number) {
-  if (value >= 1000) {
-    const compact = value / 1000;
-    return `${compact >= 10 ? compact.toFixed(0) : compact.toFixed(1)}k`;
-  }
-  return String(value);
+  const compact = value / 1000;
+
+  if (compact >= 100) return `${compact.toFixed(0)}k`;
+  if (compact >= 10) return `${compact.toFixed(1)}k`;
+  return `${compact.toFixed(1)}k`;
 }
 
 function formatUsageSummary(message: ChatMessage) {
   if (!message.usage) return null;
 
-  const parts = [`${formatCompactThousands(message.usage.contextInput)} ctx`];
+  const totalContext = message.usage.contextInput + message.usage.cacheRead + message.usage.cacheWrite;
+  const totalCache = message.usage.cacheRead + message.usage.cacheWrite;
+  const parts = [`${formatCompactThousands(totalContext)} ctx`];
+
+  if (totalCache > 0) {
+    parts.push(`${formatCompactThousands(totalCache)} cache`);
+  }
 
   if (message.usage.output > 0) {
     parts.push(`${formatCompactThousands(message.usage.output)} out`);
@@ -42,7 +48,7 @@ function formatUsageSummary(message: ChatMessage) {
   }
 
   return {
-    compact: `${formatCompactThousands(message.usage.contextInput)} ctx`,
+    compact: `${formatCompactThousands(totalContext)} ctx`,
     detail: parts.join(" · "),
   };
 }
