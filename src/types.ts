@@ -94,6 +94,12 @@ export type Session = {
   title?: string;
   parentID?: string | null;
   share?: unknown;
+  revert?: {
+    messageID: string;
+    partID?: string;
+    snapshot?: string;
+    diff?: string;
+  } | null;
   time?: {
     created?: number;
     updated?: number;

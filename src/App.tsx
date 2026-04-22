@@ -214,6 +214,11 @@ type SentMessageDraft = {
   model: string;
 };
 
+type SessionActionTarget = {
+  id: string;
+  text: string;
+};
+
 type AwaitingSessionCompletion = {
   sessionId: string;
   seenBusy: boolean;
@@ -276,6 +281,21 @@ function resolveCompactionModel(selectedModel: string, providers: ConfigProvider
   return null;
 }
 
+function getLatestUserMessageTarget(messages: ChatMessage[]): SessionActionTarget | null {
+  const userMessage = [...messages].reverse().find((message) => message.role === "user" && !message.isPending);
+  if (!userMessage) return null;
+
+  const text = userMessage.parts
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text as string)
+    .join("");
+
+  return {
+    id: userMessage.id,
+    text,
+  };
+}
+
 function App() {
   const [config, setConfig] = useState<ServerConfig>(() => loadServerConfig());
   const [connectStatus, setConnectStatus] = useState("尚未连接");
@@ -304,8 +324,6 @@ function App() {
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [runningCommandName, setRunningCommandName] = useState<string | null>(null);
-  const [retryingSessionId, setRetryingSessionId] = useState<string | null>(null);
-  const [abortingSessionId, setAbortingSessionId] = useState<string | null>(null);
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
   const [respondingPermissionId, setRespondingPermissionId] = useState<string | null>(null);
   const [questionRequests, setQuestionRequests] = useState<QuestionRequest[]>([]);
@@ -314,6 +332,9 @@ function App() {
   const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, QueuedMessage[]>>({});
   const [dispatchingMessage, setDispatchingMessage] = useState<QueuedMessage | null>(null);
   const [awaitingSessionCompletion, setAwaitingSessionCompletion] = useState<AwaitingSessionCompletion | null>(null);
+  const [undoingSessionId, setUndoingSessionId] = useState<string | null>(null);
+  const [redoingSessionId, setRedoingSessionId] = useState<string | null>(null);
+  const [forkingSessionId, setForkingSessionId] = useState<string | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const refreshTimeoutRef = useRef<number | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -328,8 +349,9 @@ function App() {
   const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
   const queuedCount = queuedMessages.length;
   const selectedModel = useMemo(() => normalizeModelValue(config.model, modelProviders), [config.model, modelProviders]);
-  const selectedLastSentDraft = selectedSessionId ? lastSentDraftBySession[selectedSessionId] || null : null;
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
+  const latestUserMessageTarget = useMemo(() => getLatestUserMessageTarget(messages), [messages]);
+  const canRedoLastMessage = Boolean(selectedSession?.revert?.messageID);
   const isSessionStalled = Boolean(
     isSessionBusy &&
       selectedActivity?.busySince &&
@@ -613,60 +635,67 @@ function App() {
     });
   }, [draft, queuedCount, selectedAgent, selectedModel, selectedSessionId]);
 
-  const handleRetryLastMessage = useCallback(async () => {
-    if (!selectedSessionId) return;
+  const handleUndoLastMessage = useCallback(async () => {
+    if (!selectedSessionId || !latestUserMessageTarget || undoingSessionId === selectedSessionId) return;
 
-    const previous = lastSentDraftBySession[selectedSessionId];
-    if (!previous?.text.trim()) return;
-
-    const now = Date.now();
-    const optimisticMessageId = `local-${now}`;
-    const queueItem: QueuedMessage = {
-      id: `queue-${now}-${Math.random().toString(36).slice(2, 8)}`,
-      sessionId: selectedSessionId,
-      text: previous.text,
-      agent: previous.agent,
-      model: previous.model,
-      optimisticMessageId,
-      createdAt: now,
-    };
-
-    setRetryingSessionId(selectedSessionId);
-    setQueuedMessagesBySession((current) => ({
-      ...current,
-      [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
-    }));
-    setMessages((current) => [
-      ...current,
-      {
-        id: optimisticMessageId,
-        role: "user",
-        parts: [{ type: "text", text: previous.text }],
-        timestampLabel: formatTimestamp(),
-        isPending: true,
-      },
-    ]);
-    setEvents((current) => [`Retried last message - ${previous.agent}`, ...current].slice(0, 20));
-  }, [lastSentDraftBySession, selectedSessionId]);
-
-  const handleAbortSession = useCallback(async () => {
-    if (!selectedSessionId || abortingSessionId === selectedSessionId) return;
-
-    setAbortingSessionId(selectedSessionId);
+    setUndoingSessionId(selectedSessionId);
 
     try {
-      await opencodeApi.abortSession(config, selectedSessionId);
-      setAwaitingSessionCompletion(null);
-      setDispatchingMessage(null);
-      setEvents((current) => [`Aborted session run - ${selectedSessionId}`, ...current].slice(0, 20));
+      if (selectedSessionStatus && selectedSessionStatus !== "idle") {
+        await opencodeApi.abortSession(config, selectedSessionId);
+        setAwaitingSessionCompletion(null);
+        setDispatchingMessage(null);
+        setEvents((current) => [`Abort requested before undo - ${selectedSessionId}`, ...current].slice(0, 20));
+      }
+
+      await opencodeApi.revertSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
+      setDraft(latestUserMessageTarget.text);
+      setEvents((current) => [`Undid last message - ${selectedSessionId}`, ...current].slice(0, 20));
       await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "abort failed";
-      setEvents((current) => [`Abort failed - ${message}`, ...current].slice(0, 20));
+      const message = error instanceof Error ? error.message : "undo failed";
+      setEvents((current) => [`Undo failed - ${message}`, ...current].slice(0, 20));
     } finally {
-      setAbortingSessionId((current) => (current === selectedSessionId ? null : current));
+      setUndoingSessionId((current) => (current === selectedSessionId ? null : current));
     }
-  }, [abortingSessionId, config, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
+  }, [config, latestUserMessageTarget, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId, selectedSessionStatus, undoingSessionId]);
+
+  const handleForkLastMessage = useCallback(async () => {
+    if (!selectedSessionId || !latestUserMessageTarget || forkingSessionId === selectedSessionId) return;
+
+    setForkingSessionId(selectedSessionId);
+
+    try {
+      const forked = await opencodeApi.forkSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
+      setDraft(latestUserMessageTarget.text);
+      setEvents((current) => [`Forked from last message - ${selectedSessionId}`, ...current].slice(0, 20));
+      await refreshSessions();
+      setSelectedSessionId(forked.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "fork failed";
+      setEvents((current) => [`Fork failed - ${message}`, ...current].slice(0, 20));
+    } finally {
+      setForkingSessionId((current) => (current === selectedSessionId ? null : current));
+    }
+  }, [config, forkingSessionId, latestUserMessageTarget, refreshSessions, selectedSessionId]);
+
+  const handleRedoLastMessage = useCallback(async () => {
+    if (!selectedSessionId || !selectedSession?.revert?.messageID || redoingSessionId === selectedSessionId) return;
+
+    setRedoingSessionId(selectedSessionId);
+
+    try {
+      await opencodeApi.unrevertSession(config, selectedSessionId);
+      setDraft("");
+      setEvents((current) => [`Redid reverted messages - ${selectedSessionId}`, ...current].slice(0, 20));
+      await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "redo failed";
+      setEvents((current) => [`Redo failed - ${message}`, ...current].slice(0, 20));
+    } finally {
+      setRedoingSessionId((current) => (current === selectedSessionId ? null : current));
+    }
+  }, [config, redoingSessionId, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSession, selectedSessionId]);
 
   const handleCompactContext = useCallback(async () => {
     if (!selectedSessionId || runningCommandName) return;
@@ -820,7 +849,6 @@ function App() {
         setEvents((current) => [`Queued send failed - ${message}`, ...current].slice(0, 20));
       } finally {
         setDispatchingMessage((current) => (current?.id === item.id ? null : current));
-        setRetryingSessionId((current) => (current === item.sessionId ? null : current));
         if (item.sessionId === selectedSessionId) {
           setIsSending(false);
         }
@@ -1291,9 +1319,12 @@ function App() {
       permissionRequests={permissionRequests}
       questionRequests={questionRequests}
       isStalled={isSessionStalled}
-      canRetryLastMessage={Boolean(selectedLastSentDraft?.text.trim())}
-      isRetryingLastMessage={retryingSessionId === selectedSessionId}
-      isAbortingSession={abortingSessionId === selectedSessionId}
+      canUndoLastMessage={Boolean(latestUserMessageTarget)}
+      canRedoLastMessage={canRedoLastMessage}
+      canForkLastMessage={Boolean(latestUserMessageTarget)}
+      isUndoingLastMessage={undoingSessionId === selectedSessionId}
+      isRedoingLastMessage={redoingSessionId === selectedSessionId}
+      isForkingLastMessage={forkingSessionId === selectedSessionId}
       runningCommandName={runningCommandName}
       onConfigChange={handleConfigChange}
       onModelChange={(model) => void handleModelChange(model)}
@@ -1309,8 +1340,9 @@ function App() {
       onAgentChange={(value) => setSelectedAgent(value)}
       onSend={handleSend}
       onRunCommand={(commandName, argumentsText) => void handleRunCommand(commandName, argumentsText)}
-      onRetryLastMessage={() => void handleRetryLastMessage()}
-      onAbortSession={() => void handleAbortSession()}
+      onUndoLastMessage={() => void handleUndoLastMessage()}
+      onRedoLastMessage={() => void handleRedoLastMessage()}
+      onForkLastMessage={() => void handleForkLastMessage()}
       onRefreshDiff={() => void refreshDiff()}
       respondingPermissionId={respondingPermissionId}
       onPermissionAction={handlePermissionAction}

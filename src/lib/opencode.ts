@@ -185,6 +185,26 @@ export const opencodeApi = {
     });
   },
 
+  forkSession(config: ServerConfig, sessionId: string, body?: { messageID?: string }) {
+    return request<Session>(config, `/session/${sessionId}/fork`, {
+      method: "POST",
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  revertSession(config: ServerConfig, sessionId: string, body: { messageID: string }) {
+    return request<Session>(config, `/session/${sessionId}/revert`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  unrevertSession(config: ServerConfig, sessionId: string) {
+    return request<Session>(config, `/session/${sessionId}/unrevert`, {
+      method: "POST",
+    });
+  },
+
   createSession(config: ServerConfig, body: CreateSessionRequest) {
     return request<Session>(config, "/session", {
       method: "POST",

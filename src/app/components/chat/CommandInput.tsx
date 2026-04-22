@@ -6,13 +6,15 @@ import {
   ArrowUpIcon,
   ChevronDownIcon,
   ClockIcon,
+  CornerUpLeftIcon,
+  GitBranchIcon,
   LightbulbIcon,
   MoreHorizontalIcon,
   PaperclipIcon,
   RefreshCwIcon,
+  CheckIcon,
   SearchIcon,
   Settings2Icon,
-  SquareIcon,
   TerminalIcon,
   WrenchIcon,
 } from "../ui/icons";
@@ -29,13 +31,17 @@ interface CommandInputProps {
   isSending: boolean;
   queuedCount: number;
   isBusy: boolean;
-  canRetryLastMessage: boolean;
-  isRetryingLastMessage: boolean;
-  isAbortingSession: boolean;
+  canUndoLastMessage: boolean;
+  canRedoLastMessage: boolean;
+  canForkLastMessage: boolean;
+  isUndoingLastMessage: boolean;
+  isRedoingLastMessage: boolean;
+  isForkingLastMessage: boolean;
   runningCommandName: string | null;
   onRunCommand: (commandName: string, argumentsText: string) => void;
-  onRetryLastMessage: () => void;
-  onAbortSession: () => void;
+  onUndoLastMessage: () => void;
+  onRedoLastMessage: () => void;
+  onForkLastMessage: () => void;
 }
 
 export function CommandInput({
@@ -50,13 +56,17 @@ export function CommandInput({
   isSending,
   queuedCount,
   isBusy,
-  canRetryLastMessage,
-  isRetryingLastMessage,
-  isAbortingSession,
+  canUndoLastMessage,
+  canRedoLastMessage,
+  canForkLastMessage,
+  isUndoingLastMessage,
+  isRedoingLastMessage,
+  isForkingLastMessage,
   runningCommandName,
   onRunCommand,
-  onRetryLastMessage,
-  onAbortSession,
+  onUndoLastMessage,
+  onRedoLastMessage,
+  onForkLastMessage,
 }: CommandInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
@@ -363,15 +373,15 @@ export function CommandInput({
                     ? "border-stone-300 bg-stone-100 text-stone-700"
                     : isBusy
                       ? "border-stone-300 bg-stone-100 text-stone-700 hover:border-stone-400 hover:bg-stone-200/70"
-                      : canRetryLastMessage
+                      : canUndoLastMessage || canRedoLastMessage || canForkLastMessage
                         ? "border-stone-300 bg-stone-100 text-stone-700 hover:border-stone-400 hover:bg-stone-200/70"
-                    : "border-stone-200 bg-white text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700",
+                        : "border-stone-200 bg-white text-stone-500 hover:border-stone-300 hover:bg-stone-50 hover:text-stone-700",
                 )}
                 type="button"
                 title="Session actions"
               >
                 <MoreHorizontalIcon className="h-4 w-4" />
-                {canRetryLastMessage && !isBusy ? (
+                {canUndoLastMessage || canRedoLastMessage || (canForkLastMessage && !isBusy) ? (
                   <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-stone-500" />
                 ) : null}
                 {isBusy ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-stone-500" /> : null}
@@ -396,43 +406,64 @@ export function CommandInput({
                     >
                       <button
                         onClick={() => {
-                          onRetryLastMessage();
+                          onUndoLastMessage();
                           setIsActionMenuOpen(false);
                         }}
-                        disabled={!canRetryLastMessage || isRetryingLastMessage || isAbortingSession}
+                        disabled={!canUndoLastMessage || isUndoingLastMessage || isForkingLastMessage}
                         className={clsx(
                             "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
-                          canRetryLastMessage && !isRetryingLastMessage && !isAbortingSession
+                          canUndoLastMessage && !isUndoingLastMessage && !isForkingLastMessage
                             ? "text-stone-700 hover:bg-stone-50"
                             : "text-stone-400",
                         )}
                         type="button"
                       >
-                        <RefreshCwIcon className={clsx("h-4 w-4 shrink-0", isRetryingLastMessage ? "animate-spin" : "")} />
+                        <CornerUpLeftIcon className={clsx("h-4 w-4 shrink-0", isUndoingLastMessage ? "animate-pulse" : "")} />
                         <div>
-                          <div className="font-medium">Retry</div>
-                          <div className="text-[11px] text-stone-400">Resend last message</div>
+                          <div className="font-medium">{isUndoingLastMessage ? "Undoing" : "Undo"}</div>
+                          <div className="text-[11px] text-stone-400">Reset the last message</div>
                         </div>
                       </button>
 
                       <button
                         onClick={() => {
-                          onAbortSession();
+                          onRedoLastMessage();
                           setIsActionMenuOpen(false);
                         }}
-                        disabled={!isBusy || isAbortingSession}
+                        disabled={!canRedoLastMessage || isUndoingLastMessage || isRedoingLastMessage || isForkingLastMessage}
                         className={clsx(
                             "mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
-                            isBusy && !isAbortingSession
+                          canRedoLastMessage && !isUndoingLastMessage && !isRedoingLastMessage && !isForkingLastMessage
+                            ? "text-stone-700 hover:bg-stone-50"
+                            : "text-stone-400",
+                        )}
+                        type="button"
+                      >
+                        <CheckIcon className={clsx("h-4 w-4 shrink-0", isRedoingLastMessage ? "animate-pulse" : "")} />
+                        <div>
+                          <div className="font-medium">{isRedoingLastMessage ? "Redoing" : "Redo"}</div>
+                          <div className="text-[11px] text-stone-400">Restore reverted messages</div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          onForkLastMessage();
+                          setIsActionMenuOpen(false);
+                        }}
+                        disabled={!canForkLastMessage || isUndoingLastMessage || isRedoingLastMessage || isForkingLastMessage}
+                        className={clsx(
+                            "mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
+                            canForkLastMessage && !isUndoingLastMessage && !isRedoingLastMessage && !isForkingLastMessage
                               ? "text-stone-700 hover:bg-stone-50"
                               : "text-stone-400",
                         )}
                         type="button"
                       >
-                        <SquareIcon className="h-4 w-4 shrink-0 fill-current" />
+                        <GitBranchIcon className={clsx("h-4 w-4 shrink-0", isForkingLastMessage ? "animate-pulse" : "")} />
                         <div>
-                          <div className="font-medium">{isAbortingSession ? "Stopping" : "Stop"}</div>
-                          <div className="text-[11px] text-stone-400">Abort current run</div>
+                          <div className="font-medium">{isForkingLastMessage ? "Forking" : "Fork"}</div>
+                          <div className="text-[11px] text-stone-400">Start a new session from the last prompt</div>
                         </div>
                       </button>
                     </motion.div>

@@ -48,9 +48,12 @@ export function MainLayout({
   isRefreshingSession,
   isBusy,
   isStalled,
-  canRetryLastMessage,
-  isRetryingLastMessage,
-  isAbortingSession,
+  canUndoLastMessage,
+  canRedoLastMessage,
+  canForkLastMessage,
+  isUndoingLastMessage,
+  isRedoingLastMessage,
+  isForkingLastMessage,
   runningCommandName,
   diffCount,
   events,
@@ -70,8 +73,9 @@ export function MainLayout({
   onAgentChange,
   onSend,
   onRunCommand,
-  onRetryLastMessage,
-  onAbortSession,
+  onUndoLastMessage,
+  onRedoLastMessage,
+  onForkLastMessage,
   onRefreshDiff,
   onPermissionAction,
   respondingPermissionId,
@@ -106,9 +110,12 @@ export function MainLayout({
   isRefreshingSession: boolean;
   isBusy: boolean;
   isStalled: boolean;
-  canRetryLastMessage: boolean;
-  isRetryingLastMessage: boolean;
-  isAbortingSession: boolean;
+  canUndoLastMessage: boolean;
+  canRedoLastMessage: boolean;
+  canForkLastMessage: boolean;
+  isUndoingLastMessage: boolean;
+  isRedoingLastMessage: boolean;
+  isForkingLastMessage: boolean;
   runningCommandName: string | null;
   diffCount: number;
   events: string[];
@@ -128,8 +135,9 @@ export function MainLayout({
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
   onRunCommand: (commandName: string, argumentsText: string) => void;
-  onRetryLastMessage: () => void;
-  onAbortSession: () => void;
+  onUndoLastMessage: () => void;
+  onRedoLastMessage: () => void;
+  onForkLastMessage: () => void;
   onRefreshDiff: () => void;
   onPermissionAction: (id: string, action: "once" | "always" | "reject") => Promise<void>;
   respondingPermissionId: string | null;
@@ -275,17 +283,21 @@ export function MainLayout({
                 queuedCount={queuedCount}
                 isBusy={isBusy}
                 isStalled={isStalled}
-                canRetryLastMessage={canRetryLastMessage}
-                isRetryingLastMessage={isRetryingLastMessage}
-                isAbortingSession={isAbortingSession}
+                canUndoLastMessage={canUndoLastMessage}
+                canRedoLastMessage={canRedoLastMessage}
+                canForkLastMessage={canForkLastMessage}
+                isUndoingLastMessage={isUndoingLastMessage}
+                isRedoingLastMessage={isRedoingLastMessage}
+                isForkingLastMessage={isForkingLastMessage}
                 runningCommandName={runningCommandName}
                 onDraftChange={onDraftChange}
                 onLoadOlderMessages={onLoadOlderMessages}
                 onAgentChange={onAgentChange}
                 onSend={onSend}
                 onRunCommand={onRunCommand}
-                onRetryLastMessage={onRetryLastMessage}
-                onAbortSession={onAbortSession}
+                onUndoLastMessage={onUndoLastMessage}
+                onRedoLastMessage={onRedoLastMessage}
+                onForkLastMessage={onForkLastMessage}
                 serverLabel={serverLabel}
                 hasSidePanel={permissionRequests.length > 0 || questionRequests.length > 0}
               />

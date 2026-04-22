@@ -50,3 +50,5 @@ export const XIcon = resolveIcon("X");
 export const ZapIcon = resolveIcon("Zap");
 export const FileCodeIcon = resolveIcon("FileCode");
 export const ClockIcon = resolveIcon("Clock");
+export const CornerUpLeftIcon = resolveIcon("CornerUpLeft");
+export const GitBranchIcon = resolveIcon("GitBranch");

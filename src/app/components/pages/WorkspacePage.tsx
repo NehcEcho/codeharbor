@@ -18,17 +18,21 @@ export function WorkspacePage({
   queuedCount,
   isBusy,
   isStalled,
-  canRetryLastMessage,
-  isRetryingLastMessage,
-  isAbortingSession,
+  canUndoLastMessage,
+  canRedoLastMessage,
+  canForkLastMessage,
+  isUndoingLastMessage,
+  isRedoingLastMessage,
+  isForkingLastMessage,
   runningCommandName,
   onDraftChange,
   onLoadOlderMessages,
   onAgentChange,
   onSend,
   onRunCommand,
-  onRetryLastMessage,
-  onAbortSession,
+  onUndoLastMessage,
+  onRedoLastMessage,
+  onForkLastMessage,
   serverLabel,
   hasSidePanel,
 }: {
@@ -45,17 +49,21 @@ export function WorkspacePage({
   queuedCount: number;
   isBusy: boolean;
   isStalled: boolean;
-  canRetryLastMessage: boolean;
-  isRetryingLastMessage: boolean;
-  isAbortingSession: boolean;
+  canUndoLastMessage: boolean;
+  canRedoLastMessage: boolean;
+  canForkLastMessage: boolean;
+  isUndoingLastMessage: boolean;
+  isRedoingLastMessage: boolean;
+  isForkingLastMessage: boolean;
   runningCommandName: string | null;
   onDraftChange: (value: string) => void;
   onLoadOlderMessages: () => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
   onRunCommand: (commandName: string, argumentsText: string) => void;
-  onRetryLastMessage: () => void;
-  onAbortSession: () => void;
+  onUndoLastMessage: () => void;
+  onRedoLastMessage: () => void;
+  onForkLastMessage: () => void;
   serverLabel: string;
   hasSidePanel: boolean;
 }) {
@@ -176,13 +184,17 @@ export function WorkspacePage({
             isSending={isSending}
             queuedCount={queuedCount}
             isBusy={isBusy}
-            canRetryLastMessage={canRetryLastMessage}
-            isRetryingLastMessage={isRetryingLastMessage}
-            isAbortingSession={isAbortingSession}
+            canUndoLastMessage={canUndoLastMessage}
+            canRedoLastMessage={canRedoLastMessage}
+            canForkLastMessage={canForkLastMessage}
+            isUndoingLastMessage={isUndoingLastMessage}
+            isRedoingLastMessage={isRedoingLastMessage}
+            isForkingLastMessage={isForkingLastMessage}
             runningCommandName={runningCommandName}
             onRunCommand={onRunCommand}
-            onRetryLastMessage={onRetryLastMessage}
-            onAbortSession={onAbortSession}
+            onUndoLastMessage={onUndoLastMessage}
+            onRedoLastMessage={onRedoLastMessage}
+            onForkLastMessage={onForkLastMessage}
           />
         </div>
       </div>
