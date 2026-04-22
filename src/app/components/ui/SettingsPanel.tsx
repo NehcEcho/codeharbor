@@ -9,10 +9,6 @@ type ModelOption = {
 };
 
 function splitOptionLabel(option: ModelOption) {
-  if (!option.value) {
-    return { provider: "OpenCode", model: "Server default", detail: option.label };
-  }
-
   const separatorIndex = option.label.indexOf(" / ");
   if (separatorIndex < 0) {
     return { provider: "Model", model: option.label, detail: option.value };
@@ -127,11 +123,16 @@ export function SettingsPanel({
                 <div className="min-w-0">
                   <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-stone-400">Current</div>
                   <div className="mt-1 truncate text-sm font-medium text-stone-900">
-                    {splitOptionLabel(modelOptions.find((option) => option.value === config.model) || modelOptions[0]).provider}
+                    {splitOptionLabel(
+                      modelOptions.find((option) => option.value === config.model) || {
+                        value: config.model,
+                        label: config.model || "No model selected",
+                      },
+                    ).provider}
                   </div>
                 </div>
                 <div className="rounded-full border border-stone-200 bg-white px-3 py-1 text-[11px] font-medium text-stone-500 shadow-sm">
-                  {config.model || "server default"}
+                  {config.model || "not configured"}
                 </div>
               </div>
             </div>

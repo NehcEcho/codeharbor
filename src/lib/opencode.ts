@@ -123,8 +123,19 @@ export const opencodeApi = {
     return request<OpenCodeConfig>(config, "/config");
   },
 
+  getGlobalConfig(config: ServerConfig) {
+    return request<OpenCodeConfig>(config, "/global/config");
+  },
+
   updateConfig(config: ServerConfig, body: OpenCodeConfig) {
     return request<OpenCodeConfig>(config, "/config", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  },
+
+  updateGlobalConfig(config: ServerConfig, body: OpenCodeConfig) {
+    return request<OpenCodeConfig>(config, "/global/config", {
       method: "PATCH",
       body: JSON.stringify(body),
     });

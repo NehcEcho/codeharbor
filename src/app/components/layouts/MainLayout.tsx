@@ -154,7 +154,7 @@ export function MainLayout({
   }, [config.baseUrl]);
 
   const modelOptions = useMemo(() => {
-    const options = [{ value: "", label: "跟随后端默认模型" }];
+    const options: Array<{ value: string; label: string }> = [];
 
     for (const provider of modelProviders) {
       const models = Object.values(provider.models)

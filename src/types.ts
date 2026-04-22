@@ -136,7 +136,10 @@ export type CreateSessionRequest = {
 
 export type SendMessageRequest = {
   agent?: string;
-  model?: string;
+  model?: {
+    providerID: string;
+    modelID: string;
+  };
   noReply?: boolean;
   parts: Array<{
     type: string;

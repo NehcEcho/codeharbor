@@ -374,7 +374,7 @@ function App() {
       return null;
     }
 
-    const remoteConfig = await opencodeApi.getConfig(targetConfig);
+    const remoteConfig = await opencodeApi.getGlobalConfig(targetConfig);
     const nextModel = typeof remoteConfig.model === "string" ? remoteConfig.model : "";
     setConfig((current) => ({ ...current, model: nextModel }));
     return remoteConfig;
@@ -513,21 +513,19 @@ function App() {
 
   const handleModelChange = useCallback(
     async (model: string) => {
+      if (!model || model === config.model) return;
+
       const previousModel = config.model;
       setConfig((current) => ({ ...current, model }));
 
       try {
-        const currentRemoteConfig = (await opencodeApi.getConfig(config)) as OpenCodeConfig;
-        const nextRemoteConfig = await opencodeApi.updateConfig(config, {
-          ...currentRemoteConfig,
-          model,
-        });
+        const nextRemoteConfig = await opencodeApi.updateGlobalConfig(config, { model });
 
         setConfig((current) => ({
           ...current,
           model: typeof nextRemoteConfig.model === "string" ? nextRemoteConfig.model : model,
         }));
-        setEvents((current) => [`Default model updated - ${model || "server default"}`, ...current].slice(0, 20));
+        setEvents((current) => [`Default model updated - ${model}`, ...current].slice(0, 20));
       } catch (error) {
         const message = error instanceof Error ? error.message : "model update failed";
         setConfig((current) => ({ ...current, model: previousModel }));
@@ -739,9 +737,11 @@ function App() {
       setIsSending(item.sessionId === selectedSessionId);
 
       try {
+        const requestModel = item.model ? splitProviderModel(item.model) || undefined : undefined;
+
         await opencodeApi.sendMessage(config, item.sessionId, {
           agent: item.agent,
-          model: item.model || undefined,
+          model: requestModel,
           parts: [{ type: "text", text: item.text }],
         });
 
