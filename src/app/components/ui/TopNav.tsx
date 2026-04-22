@@ -9,6 +9,7 @@ interface TopNavProps {
   onSettingsClick: () => void;
   serverLabel: string;
   sessionLabel: string;
+  pendingActionCount: number;
 }
 
 export function TopNav({
@@ -20,7 +21,10 @@ export function TopNav({
   onSettingsClick,
   serverLabel,
   sessionLabel,
+  pendingActionCount,
 }: TopNavProps) {
+  const hasPendingActions = pendingActionCount > 0;
+
   return (
     <header className="h-14 border-b border-stone-200 bg-[#FCFCFA]/90 backdrop-blur-md sticky top-0 z-30 px-4 flex items-center justify-between font-medium text-stone-700 text-sm shrink-0">
       <div className="flex items-center gap-4">
@@ -65,15 +69,35 @@ export function TopNav({
             </button>
             <button
               onClick={onStatusClick}
-              className="lg:hidden flex items-center gap-1.5 p-1.5 px-3 hover:bg-stone-100 rounded-md text-stone-600 transition-colors border border-transparent hover:border-stone-200/50"
+              className={`lg:hidden flex items-center gap-1.5 p-1.5 px-3 rounded-md transition-colors border ${
+                hasPendingActions
+                  ? "bg-red-50 text-red-700 border-red-200 shadow-[0_0_0_1px_rgba(239,68,68,0.08)]"
+                  : "hover:bg-stone-100 text-stone-600 border-transparent hover:border-stone-200/50"
+              }`}
               type="button"
+              title={hasPendingActions ? `${pendingActionCount} pending approvals or questions` : "Status"}
             >
-              <ActivityIcon className="w-4 h-4" />
-              <span className="text-xs hidden sm:inline-block">Status</span>
+              <span className="relative flex items-center">
+                <ActivityIcon className="w-4 h-4" />
+                {hasPendingActions ? <span className="absolute -right-1.5 -top-1.5 h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" /> : null}
+              </span>
+              <span className="text-xs hidden sm:inline-block">{hasPendingActions ? "Needs attention" : "Status"}</span>
             </button>
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100/50 text-[11px] font-medium tracking-wide">
-              CONNECTED
-            </div>
+            {hasPendingActions ? (
+              <button
+                onClick={onStatusClick}
+                className="hidden sm:flex items-center gap-2 px-3 py-1 bg-red-50 text-red-700 rounded-full border border-red-200 text-[11px] font-medium tracking-wide animate-pulse"
+                type="button"
+                title={`${pendingActionCount} pending approvals or questions`}
+              >
+                <span className="h-2 w-2 rounded-full bg-red-500" />
+                {pendingActionCount === 1 ? "1 PENDING ACTION" : `${pendingActionCount} PENDING ACTIONS`}
+              </button>
+            ) : (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100/50 text-[11px] font-medium tracking-wide">
+                CONNECTED
+              </div>
+            )}
           </>
         ) : (
           <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-stone-100 text-stone-600 rounded-full border border-stone-200/50 text-[11px] font-medium tracking-wide">

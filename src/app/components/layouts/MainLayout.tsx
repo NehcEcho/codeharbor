@@ -172,6 +172,8 @@ export function MainLayout({
     return options;
   }, [config.model, modelProviders]);
 
+  const pendingActionCount = permissionRequests.length + questionRequests.length;
+
   return (
     <div className="flex h-screen flex-col bg-[#FCFCFA] text-stone-800 font-sans overflow-hidden selection:bg-stone-200 selection:text-stone-900">
       <TopNav
@@ -183,6 +185,7 @@ export function MainLayout({
         onSettingsClick={() => setIsSettingsOpen((current) => !current)}
         serverLabel={serverLabel}
         sessionLabel={selectedSession?.title || "No active session"}
+        pendingActionCount={pendingActionCount}
       />
 
       <AnimatePresence>

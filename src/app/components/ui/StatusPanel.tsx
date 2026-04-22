@@ -19,21 +19,30 @@ export function StatusPanel({
   onQuestionReject: (id: string) => Promise<void>;
 }) {
   const totalCount = permissionRequests.length + questionRequests.length;
+  const hasPendingActions = totalCount > 0;
 
   return (
     <div className="flex flex-col h-full bg-inherit">
       <div className="p-4 border-b border-stone-200/60 sticky top-0 bg-[#FAFAEE]/95 backdrop-blur-sm z-10 shrink-0 shadow-[0_4px_10px_rgba(0,0,0,0.01)] flex items-center justify-between">
-        <h3 className="font-semibold text-stone-900 tracking-tight flex items-center gap-2">
-          <ShieldAlertIcon className="w-4 h-4 text-amber-600" />
-          Action Queue
-        </h3>
-        <span className="text-xs text-stone-400">{totalCount}</span>
+        <div className="min-w-0">
+          <h3 className={`font-semibold tracking-tight flex items-center gap-2 ${hasPendingActions ? "text-red-700" : "text-stone-900"}`}>
+            <span className="relative flex items-center justify-center">
+              <ShieldAlertIcon className={`w-4 h-4 ${hasPendingActions ? "text-red-600" : "text-amber-600"}`} />
+              {hasPendingActions ? <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" /> : null}
+            </span>
+            {hasPendingActions ? "Pending approvals and questions" : "Action Queue"}
+          </h3>
+          <p className="mt-1 text-xs text-stone-500">
+            {hasPendingActions ? "Review these before the session can fully continue." : "No items need confirmation right now."}
+          </p>
+        </div>
+        <span className={`text-xs font-medium ${hasPendingActions ? "text-red-600" : "text-stone-400"}`}>{totalCount}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {questionRequests.length === 0 && permissionRequests.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-stone-200 bg-white/70 p-6 text-sm text-stone-400 text-center">
-            No pending questions or approvals right now.
+            No pending approvals or questions right now.
           </div>
         ) : null}
 
