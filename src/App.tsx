@@ -354,11 +354,14 @@ function App() {
   const [clock, setClock] = useState(() => Date.now());
   const refreshTimeoutRef = useRef<number | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const selectedSessionIdRef = useRef<string | null>(null);
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) || null,
     [sessions, selectedSessionId],
   );
+
+  selectedSessionIdRef.current = selectedSessionId;
 
   const selectedSessionStatus = selectedSessionId ? statusMap[selectedSessionId] : undefined;
   const isSessionBusy = selectedSessionStatus === "busy";
@@ -383,18 +386,57 @@ function App() {
     const sorted = [...sessionList].sort(
       (left, right) => (right.time?.updated || 0) - (left.time?.updated || 0),
     );
-    setSessions(sorted);
+    setSessions((current) => {
+      const merged = [...current];
+
+      for (const session of sorted) {
+        const existingIndex = merged.findIndex((item) => item.id === session.id);
+        if (existingIndex >= 0) {
+          merged[existingIndex] = { ...merged[existingIndex], ...session };
+        } else {
+          merged.push(session);
+        }
+      }
+
+      return [...merged].sort((left, right) => (right.time?.updated || 0) - (left.time?.updated || 0));
+    });
     setStatusMap(nextStatusMap);
-    setSelectedSessionId((current) => current || sorted[0]?.id || null);
+    setSelectedSessionId((current) => {
+      if (current && sorted.some((session) => session.id === current)) {
+        return current;
+      }
+      return sorted[0]?.id || null;
+    });
   }, [config]);
+
+  const resetSelectedSessionState = useCallback(() => {
+    setMessages([]);
+    setMessagesNextCursor(null);
+    setIsLoadingOlderMessages(false);
+    setDiffCount(0);
+    setPermissionRequests([]);
+    setQuestionRequests([]);
+  }, []);
+
+  const handleSessionSelect = useCallback((sessionId: string) => {
+    if (sessionId === selectedSessionIdRef.current) return;
+    resetSelectedSessionState();
+    setSelectedSessionId(sessionId);
+  }, [resetSelectedSessionState]);
 
   const refreshMessages = useCallback(async (options?: { before?: string; appendOlder?: boolean; limit?: number }) => {
     if (!selectedSessionId) return;
 
-    const page: MessagePage = await opencodeApi.listMessages(config, selectedSessionId, {
+    const sessionId = selectedSessionId;
+
+    const page: MessagePage = await opencodeApi.listMessages(config, sessionId, {
       limit: options?.limit ?? INITIAL_MESSAGE_PAGE_SIZE,
       before: options?.before,
     });
+
+    if (selectedSessionIdRef.current !== sessionId) {
+      return;
+    }
 
     const mapped = page.items.map(mapMessageEnvelope);
     setMessagesNextCursor(page.nextCursor);
@@ -574,9 +616,12 @@ function App() {
     if (!title) return;
 
     const created = await opencodeApi.createSession(config, { title });
-    await refreshSessions();
-    setSelectedSessionId(created.id);
-  }, [config, refreshSessions]);
+    setSessions((current) => upsertSession(current, created));
+    handleSessionSelect(created.id);
+    window.setTimeout(() => {
+      void refreshSessions();
+    }, 600);
+  }, [config, handleSessionSelect, refreshSessions]);
 
   const handleConfigChange = useCallback((next: ServerConfig) => {
     setConfig(next);
@@ -685,15 +730,18 @@ function App() {
       const forked = await opencodeApi.forkSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
       setDraft(latestUserMessageTarget.text);
       setEvents((current) => [`Forked from last message - ${selectedSessionId}`, ...current].slice(0, 20));
-      await refreshSessions();
-      setSelectedSessionId(forked.id);
+      setSessions((current) => upsertSession(current, forked));
+      handleSessionSelect(forked.id);
+      window.setTimeout(() => {
+        void refreshSessions();
+      }, 600);
     } catch (error) {
       const message = error instanceof Error ? error.message : "fork failed";
       setEvents((current) => [`Fork failed - ${message}`, ...current].slice(0, 20));
     } finally {
       setForkingSessionId((current) => (current === selectedSessionId ? null : current));
     }
-  }, [config, forkingSessionId, latestUserMessageTarget, refreshSessions, selectedSessionId]);
+  }, [config, forkingSessionId, handleSessionSelect, latestUserMessageTarget, refreshSessions, selectedSessionId]);
 
   const handleRedoLastMessage = useCallback(async () => {
     if (!selectedSessionId || !selectedSession?.revert?.messageID || redoingSessionId === selectedSessionId) return;
@@ -962,12 +1010,7 @@ function App() {
 
   useEffect(() => {
     if (!selectedSessionId) {
-      setMessages([]);
-      setMessagesNextCursor(null);
-      setIsLoadingOlderMessages(false);
-      setDiffCount(0);
-      setPermissionRequests([]);
-      setQuestionRequests([]);
+      resetSelectedSessionState();
       return;
     }
 
@@ -975,7 +1018,7 @@ function App() {
     void refreshDiff();
     void refreshPermissions();
     void refreshQuestions();
-  }, [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, selectedSessionId]);
+  }, [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, resetSelectedSessionState, selectedSessionId]);
 
   useEffect(() => {
     if (connectionState !== "success") return;
@@ -1348,7 +1391,7 @@ function App() {
       isCompactingContext={runningCommandName === "compact"}
       canCompactContext={Boolean(selectedSessionId)}
       onConnect={handleConnect}
-      onSessionSelect={setSelectedSessionId}
+      onSessionSelect={handleSessionSelect}
       onCreateSession={handleCreateSession}
       onRefreshCurrentSession={() => void handleRefreshCurrentSession()}
       onDraftChange={setDraft}
