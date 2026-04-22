@@ -7,6 +7,8 @@ import { ArrowDownIcon, BotIcon } from "../ui/icons";
 export function WorkspacePage({
   session,
   messages,
+  canLoadOlderMessages,
+  isLoadingOlderMessages,
   draft,
   agent,
   commands,
@@ -21,6 +23,7 @@ export function WorkspacePage({
   isAbortingSession,
   runningCommandName,
   onDraftChange,
+  onLoadOlderMessages,
   onAgentChange,
   onSend,
   onRunCommand,
@@ -31,6 +34,8 @@ export function WorkspacePage({
 }: {
   session: Session | null;
   messages: ChatMessage[];
+  canLoadOlderMessages: boolean;
+  isLoadingOlderMessages: boolean;
   draft: string;
   agent: "build" | "plan";
   commands: CommandItem[];
@@ -45,6 +50,7 @@ export function WorkspacePage({
   isAbortingSession: boolean;
   runningCommandName: string | null;
   onDraftChange: (value: string) => void;
+  onLoadOlderMessages: () => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
   onRunCommand: (commandName: string, argumentsText: string) => void;
@@ -123,6 +129,18 @@ export function WorkspacePage({
       <div className="relative flex-1 min-h-0">
         <div className="h-full overflow-y-auto px-4 sm:px-8 py-6" ref={feedRef}>
         <div className={`mx-auto space-y-8 ${hasSidePanel ? "max-w-3xl xl:max-w-[52rem]" : "max-w-4xl"}`}>
+          {messages.length > 0 && canLoadOlderMessages ? (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={onLoadOlderMessages}
+                disabled={isLoadingOlderMessages}
+                className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-4 py-2 text-sm text-stone-700 transition hover:bg-stone-100 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isLoadingOlderMessages ? "Loading older messages..." : "Load older messages"}
+              </button>
+            </div>
+          ) : null}
           {messages.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50/70 p-10 text-center text-stone-500">
               No messages yet. Send the first remote coding instruction to begin.

@@ -8,6 +8,7 @@ import type {
   ConfigProvider,
   ConnectionState,
   MessageEnvelope,
+  MessagePage,
   OpenCodeConfig,
   PermissionRequest,
   QuestionRequest,
@@ -219,6 +220,9 @@ type AwaitingSessionCompletion = {
   startedAt: number;
 };
 
+const INITIAL_MESSAGE_PAGE_SIZE = 30;
+const OLDER_MESSAGE_PAGE_SIZE = 30;
+
 function markSessionActivity(current: SessionActivityMap, sessionID: string, timestamp = Date.now()) {
   const next = current[sessionID] || {};
   return {
@@ -281,6 +285,8 @@ function App() {
   const [statusMap, setStatusMap] = useState<SessionStatusMap>({});
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messagesNextCursor, setMessagesNextCursor] = useState<string | null>(null);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [draft, setDraft] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("build");
   const [isSending, setIsSending] = useState(false);
@@ -344,11 +350,38 @@ function App() {
     setSelectedSessionId((current) => current || sorted[0]?.id || null);
   }, [config]);
 
-  const refreshMessages = useCallback(async () => {
+  const refreshMessages = useCallback(async (options?: { before?: string; appendOlder?: boolean; limit?: number }) => {
     if (!selectedSessionId) return;
-    const nextMessages = await opencodeApi.listMessages(config, selectedSessionId);
-    setMessages((current) => mergeMessages(current, nextMessages.map(mapMessageEnvelope)));
+
+    const page: MessagePage = await opencodeApi.listMessages(config, selectedSessionId, {
+      limit: options?.limit ?? INITIAL_MESSAGE_PAGE_SIZE,
+      before: options?.before,
+    });
+
+    const mapped = page.items.map(mapMessageEnvelope);
+    setMessagesNextCursor(page.nextCursor);
+    setMessages((current) => {
+      if (options?.appendOlder) {
+        return mergeMessages(current, [...mapped, ...current]);
+      }
+      return mergeMessages(current, mapped);
+    });
   }, [config, selectedSessionId]);
+
+  const handleLoadOlderMessages = useCallback(async () => {
+    if (!selectedSessionId || !messagesNextCursor || isLoadingOlderMessages) return;
+
+    setIsLoadingOlderMessages(true);
+    try {
+      await refreshMessages({
+        before: messagesNextCursor,
+        appendOlder: true,
+        limit: OLDER_MESSAGE_PAGE_SIZE,
+      });
+    } finally {
+      setIsLoadingOlderMessages(false);
+    }
+  }, [isLoadingOlderMessages, messagesNextCursor, refreshMessages, selectedSessionId]);
 
   const refreshDiff = useCallback(async () => {
     if (!selectedSessionId) return;
@@ -886,6 +919,8 @@ function App() {
   useEffect(() => {
     if (!selectedSessionId) {
       setMessages([]);
+      setMessagesNextCursor(null);
+      setIsLoadingOlderMessages(false);
       setDiffCount(0);
       setPermissionRequests([]);
       setQuestionRequests([]);
@@ -1243,6 +1278,8 @@ function App() {
       selectedSessionId={selectedSessionId}
       selectedSession={selectedSession}
       messages={messages}
+      canLoadOlderMessages={Boolean(messagesNextCursor)}
+      isLoadingOlderMessages={isLoadingOlderMessages}
       draft={draft}
       agent={selectedAgent as "build" | "plan"}
       isSending={isSending}
@@ -1268,6 +1305,7 @@ function App() {
       onCreateSession={handleCreateSession}
       onRefreshCurrentSession={() => void handleRefreshCurrentSession()}
       onDraftChange={setDraft}
+      onLoadOlderMessages={() => void handleLoadOlderMessages()}
       onAgentChange={(value) => setSelectedAgent(value)}
       onSend={handleSend}
       onRunCommand={(commandName, argumentsText) => void handleRunCommand(commandName, argumentsText)}

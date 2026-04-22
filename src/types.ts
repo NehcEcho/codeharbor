@@ -120,6 +120,11 @@ export type MessageEnvelope = {
   parts: MessagePart[];
 };
 
+export type MessagePage = {
+  items: MessageEnvelope[];
+  nextCursor: string | null;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "tool" | "permission";

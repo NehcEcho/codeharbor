@@ -5,6 +5,7 @@ import type {
   CreateSessionRequest,
   HealthResponse,
   MessageEnvelope,
+  MessagePage,
   OpenCodeConfig,
   PermissionRequest,
   QuestionRequest,
@@ -51,6 +52,27 @@ async function request<T>(
   }
 
   return (await response.json()) as T;
+}
+
+async function requestPage<T>(
+  config: ServerConfig,
+  path: string,
+  init?: RequestInit,
+): Promise<{ items: T; nextCursor: string | null }> {
+  const response = await fetch(`${PROXY_BASE}${path}`, {
+    ...init,
+    headers: withAuthHeaders(config, init?.headers),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Request failed: ${response.status}`);
+  }
+
+  return {
+    items: (await response.json()) as T,
+    nextCursor: response.headers.get("x-next-cursor"),
+  };
 }
 
 async function streamRequest(
@@ -170,8 +192,22 @@ export const opencodeApi = {
     });
   },
 
-  listMessages(config: ServerConfig, sessionId: string) {
-    return request<MessageEnvelope[]>(config, `/session/${sessionId}/message?limit=100`);
+  listMessages(config: ServerConfig, sessionId: string, options?: { limit?: number; before?: string }) {
+    const params = new URLSearchParams();
+    if (options?.limit !== undefined) {
+      params.set("limit", String(options.limit));
+    }
+    if (options?.before) {
+      params.set("before", options.before);
+    }
+
+    const query = params.toString();
+    const path = `/session/${sessionId}/message${query ? `?${query}` : ""}`;
+
+    return requestPage<MessageEnvelope[]>(config, path).then<MessagePage>(({ items, nextCursor }) => ({
+      items,
+      nextCursor,
+    }));
   },
 
   sendMessage(config: ServerConfig, sessionId: string, body: SendMessageRequest) {

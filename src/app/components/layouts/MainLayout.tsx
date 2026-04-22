@@ -39,6 +39,8 @@ export function MainLayout({
   selectedSessionId,
   selectedSession,
   messages,
+  canLoadOlderMessages,
+  isLoadingOlderMessages,
   draft,
   agent,
   isSending,
@@ -64,6 +66,7 @@ export function MainLayout({
   onCreateSession,
   onRefreshCurrentSession,
   onDraftChange,
+  onLoadOlderMessages,
   onAgentChange,
   onSend,
   onRunCommand,
@@ -94,6 +97,8 @@ export function MainLayout({
   selectedSessionId: string | null;
   selectedSession: Session | null;
   messages: ChatMessage[];
+  canLoadOlderMessages: boolean;
+  isLoadingOlderMessages: boolean;
   draft: string;
   agent: "build" | "plan";
   isSending: boolean;
@@ -119,6 +124,7 @@ export function MainLayout({
   onCreateSession: () => void;
   onRefreshCurrentSession: () => void;
   onDraftChange: (value: string) => void;
+  onLoadOlderMessages: () => void;
   onAgentChange: (agent: "build" | "plan") => void;
   onSend: () => void;
   onRunCommand: (commandName: string, argumentsText: string) => void;
@@ -258,6 +264,8 @@ export function MainLayout({
               <WorkspacePage
                 session={selectedSession}
                 messages={messages}
+                canLoadOlderMessages={canLoadOlderMessages}
+                isLoadingOlderMessages={isLoadingOlderMessages}
                 draft={draft}
                 agent={agent}
                 commands={commands}
@@ -272,6 +280,7 @@ export function MainLayout({
                 isAbortingSession={isAbortingSession}
                 runningCommandName={runningCommandName}
                 onDraftChange={onDraftChange}
+                onLoadOlderMessages={onLoadOlderMessages}
                 onAgentChange={onAgentChange}
                 onSend={onSend}
                 onRunCommand={onRunCommand}
