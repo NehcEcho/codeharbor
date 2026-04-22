@@ -1,17 +1,13 @@
-import { memo, useMemo } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { MessageBubble } from "./MessageBubble";
 import type { ChatMessage } from "../../../types";
 
-function MessageFeedComponent({
+export function MessageFeed({
   messages,
 }: {
   messages: ChatMessage[];
 }) {
-  const lastMessageId = useMemo(
-    () => [...messages].reverse().find((message) => message.role !== "permission")?.id,
-    [messages],
-  );
+  const lastMessageId = [...messages].reverse().find((message) => message.role !== "permission")?.id;
 
   return (
     <div className="space-y-8 min-h-0">
@@ -21,7 +17,8 @@ function MessageFeedComponent({
             key={message.id}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.16, ease: "easeOut" }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
+            layout
           >
             <MessageBubble message={message} isLatest={message.id === lastMessageId} />
           </motion.div>
@@ -30,5 +27,3 @@ function MessageFeedComponent({
     </div>
   );
 }
-
-export const MessageFeed = memo(MessageFeedComponent);
