@@ -1218,24 +1218,24 @@ function App() {
       void refreshSessions();
       void refreshPermissions();
       void refreshQuestions();
-    }, 3000);
+    }, 5000);
 
     return () => window.clearInterval(interval);
   }, [config.password, isSessionBusy, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
 
   useEffect(() => {
-    if (!selectedSessionId || !config.password) return;
+    if (!selectedSessionId || !config.password || isSessionBusy) return;
 
     const interval = window.setInterval(() => {
       void refreshPermissions();
       void refreshQuestions();
-    }, 5000);
+    }, 10000);
 
     return () => window.clearInterval(interval);
-  }, [config.password, refreshPermissions, refreshQuestions, selectedSessionId]);
+  }, [config.password, isSessionBusy, refreshPermissions, refreshQuestions, selectedSessionId]);
 
   useEffect(() => {
-    if (!config.password) return;
+    if (!config.password || isSessionBusy) return;
 
     let timer: number | undefined;
     const poll = async () => {
@@ -1251,7 +1251,7 @@ function App() {
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, [config.password, refreshSessions]);
+  }, [config.password, isSessionBusy, refreshSessions]);
 
   useEffect(() => {
     if (!config.password) return;
