@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { clsx } from "clsx";
 import type { ChatMessage } from "../../../types";
@@ -321,14 +321,14 @@ function extractToolParts(message: ChatMessage) {
     });
 }
 
-export function MessageBubble({ message, isLatest = false }: { message: ChatMessage; isLatest?: boolean }) {
+function MessageBubbleComponent({ message, isLatest = false }: { message: ChatMessage; isLatest?: boolean }) {
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({});
   const [expandedContent, setExpandedContent] = useState<Record<string, boolean>>({});
-  const content = extractBody(message);
-  const contentSections = splitContentSections(content);
-  const toolParts = extractToolParts(message);
+  const content = useMemo(() => extractBody(message), [message]);
+  const contentSections = useMemo(() => splitContentSections(content), [content]);
+  const toolParts = useMemo(() => extractToolParts(message), [message]);
   const time = message.timestampLabel;
 
   return (
@@ -428,3 +428,5 @@ export function MessageBubble({ message, isLatest = false }: { message: ChatMess
     </div>
   );
 }
+
+export const MessageBubble = memo(MessageBubbleComponent);

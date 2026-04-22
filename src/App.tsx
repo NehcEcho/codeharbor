@@ -195,6 +195,15 @@ function removePermissionRequest(current: PermissionRequest[], requestId: string
   return current.filter((item) => item.id !== requestId);
 }
 
+const EVENT_LOG_TYPES = new Set([
+  "permission.asked",
+  "permission.replied",
+  "question.asked",
+  "question.replied",
+  "question.rejected",
+  "session.idle",
+]);
+
 type SessionActivityMap = Record<string, { busySince?: number; lastActivityAt?: number }>;
 
 type QueuedMessage = {
@@ -1067,7 +1076,10 @@ function App() {
               const status = properties.status as { type?: string; message?: string } | undefined;
               if (sessionID && status?.type) {
                 const nextStatus = status.type;
-                setStatusMap((current) => ({ ...current, [sessionID]: nextStatus }));
+                setStatusMap((current) => {
+                  if (current[sessionID] === nextStatus) return current;
+                  return { ...current, [sessionID]: nextStatus };
+                });
                 setSessionActivity((current) => {
                   const existing = current[sessionID] || {};
                   if (nextStatus === "busy") {
@@ -1088,7 +1100,7 @@ function App() {
                     },
                   };
                 });
-                if (sessionID === selectedSessionId && status.message) {
+                if (sessionID === selectedSessionId && status.message && nextStatus !== "busy") {
                   setEvents((current) => [`${status.type} - ${status.message}`, ...current].slice(0, 20));
                 }
 
@@ -1110,10 +1122,12 @@ function App() {
               }
             }
 
-            setEvents((current) => {
-              const label = `${payloadType}${event.raw ? ` - ${String(event.raw).slice(0, 120)}` : ""}`;
-              return [label, ...current].slice(0, 20);
-            });
+            if (EVENT_LOG_TYPES.has(payloadType)) {
+              setEvents((current) => {
+                const label = `${payloadType}${event.raw ? ` - ${String(event.raw).slice(0, 120)}` : ""}`;
+                return [label, ...current].slice(0, 20);
+              });
+            }
 
             if (payloadType === "session.idle") {
               const sessionID = properties.sessionID as string | undefined;
@@ -1208,11 +1222,7 @@ function App() {
 
     const interval = window.setInterval(async () => {
       try {
-        const health = await opencodeApi.health(config);
-        setEvents((current) => [
-          `Health OK - ${health.version} - ${new Date().toLocaleTimeString()}`,
-          ...current,
-        ].slice(0, 20));
+        await opencodeApi.health(config);
       } catch (error) {
         const message = error instanceof Error ? error.message : "event unavailable";
         setEvents((current) => [`Health check failed - ${message}`, ...current].slice(0, 20));
