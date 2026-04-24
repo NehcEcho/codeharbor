@@ -23,7 +23,7 @@ export function StatusPanel({
 
   return (
     <div className="flex h-full flex-col bg-[linear-gradient(180deg,rgba(250,250,238,0.42),rgba(252,252,250,0.96))]">
-      <div className="sticky top-0 z-10 shrink-0 border-b border-stone-200/60 bg-[#FAFAEE]/92 px-4 pb-4 pt-5 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 shrink-0 border-b border-stone-200/60 bg-[#FAFAEE]/92 px-3 pb-3 pt-4 backdrop-blur-sm sm:px-4 sm:pb-4 sm:pt-5">
         <div className="rounded-3xl border border-stone-200/70 bg-white/80 px-4 py-4 shadow-[0_18px_50px_rgba(28,25,23,0.06)]">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
@@ -64,7 +64,7 @@ export function StatusPanel({
         </div>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-6 pt-4">
+      <div className="flex-1 space-y-4 overflow-y-auto px-3 pb-5 pt-3 sm:space-y-5 sm:px-4 sm:pb-6 sm:pt-4">
         {questionRequests.length === 0 && permissionRequests.length === 0 ? (
           <div className="rounded-[28px] border border-dashed border-stone-200 bg-white/80 px-6 py-10 text-center shadow-[0_20px_40px_rgba(28,25,23,0.04)]">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200 bg-stone-50 text-stone-500">

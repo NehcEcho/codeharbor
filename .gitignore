@@ -6,3 +6,5 @@ project_unzipped/
 *.zip
 .runtime/
 nul
+NUL
+config.json

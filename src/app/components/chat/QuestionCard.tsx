@@ -89,7 +89,7 @@ export function QuestionCard({
 
   return (
     <div className="overflow-hidden rounded-[28px] border border-stone-200/80 bg-white/95 shadow-[0_20px_50px_rgba(28,25,23,0.06)]">
-      <div className="flex items-center gap-3 border-b border-stone-100 bg-gradient-to-r from-stone-50 via-white to-stone-50/60 px-4 py-3.5">
+      <div className="flex items-start gap-3 border-b border-stone-100 bg-gradient-to-r from-stone-50 via-white to-stone-50/60 px-4 py-3.5 sm:items-center">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl border border-stone-200 bg-stone-50 text-stone-700 shadow-sm">
           <BotIcon className="h-4 w-4" />
         </div>
@@ -99,7 +99,7 @@ export function QuestionCard({
         </div>
       </div>
 
-      <div className="space-y-4 px-4 py-4">
+      <div className="space-y-4 px-4 py-4 sm:px-5">
         {request.questions.map((item, index) => {
           const picked = answers[index] || [];
           const customValue = customAnswers[index] || "";
@@ -107,7 +107,7 @@ export function QuestionCard({
           return (
             <div
               key={`${request.id}-${index}`}
-              className="rounded-3xl border border-stone-200/80 bg-stone-50/70 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]"
+              className="rounded-3xl border border-stone-200/80 bg-stone-50/70 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] sm:p-4"
             >
               <div className="break-words text-sm font-semibold text-stone-900">{item.header}</div>
               <div className="mt-1 text-sm leading-relaxed text-stone-600">{item.question}</div>
@@ -157,7 +157,7 @@ export function QuestionCard({
             type="button"
             onClick={() => void handleReply()}
             disabled={!isComplete || isSubmitting}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-stone-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-1"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-stone-900 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-1"
           >
             <CheckIcon className="h-4 w-4" />
             提交回答
@@ -166,7 +166,7 @@ export function QuestionCard({
             type="button"
             onClick={() => void handleReject()}
             disabled={isSubmitting}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
             <XIcon className="h-4 w-4" />
             忽略

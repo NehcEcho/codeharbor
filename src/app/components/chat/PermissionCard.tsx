@@ -59,28 +59,28 @@ export function PermissionCard({
           <div className="mt-0.5 text-xs text-stone-500">{risk}</div>
         </div>
 
-        <div className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-center shadow-sm sm:w-auto sm:shrink-0">
+        <div className="w-full rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-left shadow-sm sm:w-auto sm:shrink-0 sm:text-center">
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">Scope</div>
           <div className="mt-0.5 text-xs font-semibold text-stone-900">{risk.split(" ")[0]}</div>
         </div>
       </div>
 
-      <div className="space-y-4 px-4 py-4">
+      <div className="space-y-4 px-4 py-4 sm:px-5">
         <div className="leading-relaxed text-sm text-stone-600">{explanation}</div>
 
-        <div className="rounded-3xl border border-stone-900 bg-[#141414] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
+        <div className="overflow-hidden rounded-3xl border border-stone-900 bg-[#141414] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.16)]">
           <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-stone-400">
             <TerminalIcon className="h-3.5 w-3.5 text-stone-500" />
             Command
           </div>
-          <code className="block break-all font-mono text-sm leading-relaxed text-amber-200">{command}</code>
+          <code className="block overflow-x-auto whitespace-pre-wrap break-all font-mono text-sm leading-relaxed text-amber-200">{command}</code>
         </div>
 
-        <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:items-center">
+        <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-3 sm:items-stretch">
           <button
             onClick={() => onAction("once")}
             disabled={isResponding}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-stone-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-stone-800 focus:ring-4 focus:ring-stone-900/10 active:scale-[0.98] disabled:opacity-60 sm:flex-1"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-stone-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-stone-800 focus:ring-4 focus:ring-stone-900/10 active:scale-[0.98] disabled:opacity-60"
             type="button"
           >
             <CheckIcon className="h-4 w-4" />
@@ -91,7 +91,7 @@ export function PermissionCard({
             onClick={() => onAction("always")}
             disabled={isResponding || request.always.length === 0}
             className={clsx(
-              "flex w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium shadow-sm transition-colors active:scale-[0.98] sm:flex-1",
+              "flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium shadow-sm transition-colors active:scale-[0.98]",
               request.always.length > 0
                 ? "border-stone-200 bg-white text-stone-900 hover:bg-stone-50 focus:ring-4 focus:ring-stone-200/40"
                 : "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-400 opacity-60",
@@ -105,7 +105,7 @@ export function PermissionCard({
           <button
             onClick={() => onAction("reject")}
             disabled={isResponding}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-200/70 bg-white px-4 py-3 text-sm font-medium text-rose-600 shadow-sm transition-colors hover:bg-rose-50 focus:ring-4 focus:ring-rose-200/40 active:scale-[0.98] disabled:opacity-60 sm:flex-1"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-rose-200/70 bg-white px-4 py-3 text-sm font-medium text-rose-600 shadow-sm transition-colors hover:bg-rose-50 focus:ring-4 focus:ring-rose-200/40 active:scale-[0.98] disabled:opacity-60"
             type="button"
           >
             <XIcon className="h-4 w-4" />

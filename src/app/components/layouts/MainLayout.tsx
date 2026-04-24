@@ -337,7 +337,7 @@ export function MainLayout({
                     animate={{ x: 0 }}
                     exit={{ x: "100%" }}
                     transition={{ type: "spring", damping: 25, stiffness: 200 }}
-                    className="fixed inset-y-0 right-0 w-80 bg-[#FCFCFA] border-l border-stone-200 z-50 lg:hidden flex flex-col pt-14"
+                    className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[min(24rem,100vw)] flex-col border-l border-stone-200 bg-[#FCFCFA] pt-14 lg:hidden"
                   >
                     <StatusPanel
                       permissionRequests={permissionRequests}

@@ -107,8 +107,8 @@ export function CommandInput({
   };
 
   return (
-    <div className="relative w-full mx-auto">
-      <div className="bg-white border border-stone-300 shadow-[0_4px_24px_rgba(0,0,0,0.04)] rounded-2xl flex flex-col focus-within:ring-4 focus-within:ring-stone-900/5 focus-within:border-stone-400 transition-all overflow-visible relative z-20">
+    <div className="relative mx-auto w-full">
+      <div className="relative z-20 flex flex-col overflow-visible rounded-2xl border border-stone-300 bg-white shadow-[0_4px_24px_rgba(0,0,0,0.04)] transition-all focus-within:border-stone-400 focus-within:ring-4 focus-within:ring-stone-900/5">
         <textarea
           ref={textareaRef}
           value={value}
@@ -123,13 +123,13 @@ export function CommandInput({
                   ? "OpenCode is still working. You can keep typing or send another instruction if needed..."
                   : `Message OpenCode ${agent === "build" ? "(Build Mode)" : "(Plan Mode)"}...`
             }
-          className="w-full bg-transparent px-4 py-4 min-h-[56px] max-h-[200px] resize-none focus:outline-none text-[15px] text-stone-800 placeholder-stone-400 font-sans leading-relaxed"
+          className="min-h-[56px] max-h-[200px] w-full resize-none bg-transparent px-4 py-3.5 text-[15px] leading-relaxed text-stone-800 placeholder-stone-400 focus:outline-none sm:py-4"
           rows={1}
           disabled={Boolean(runningCommandName)}
         />
 
-        <div className="flex items-center justify-between gap-2 px-3 pb-3">
-          <div className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap">
+        <div className="flex flex-col gap-2 px-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 sm:pb-0 md:overflow-visible">
             <button
               className="rounded-lg p-1.5 text-stone-300 transition-colors cursor-not-allowed"
               title="Attachments are not available yet"
@@ -172,7 +172,7 @@ export function CommandInput({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ type: "spring", duration: 0.25 }}
-                      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+6rem)] z-50 flex max-h-[min(28rem,60dvh)] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white p-2.5 shadow-xl md:absolute md:bottom-full md:left-0 md:right-auto md:top-auto md:mb-2 md:w-[22rem] md:max-h-[28rem]"
+                      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-50 flex max-h-[min(30rem,65dvh)] flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white p-2.5 shadow-xl sm:inset-x-4 md:inset-x-auto md:absolute md:bottom-full md:left-0 md:right-auto md:top-auto md:mb-2 md:w-[22rem] md:max-h-[28rem]"
                     >
                       <div className="flex shrink-0 items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
@@ -290,16 +290,16 @@ export function CommandInput({
               <button
                 onClick={() => setIsAgentMenuOpen(!isAgentMenuOpen)}
                 className={clsx(
-                  "flex h-8 items-center gap-1 px-1.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
+                  "flex h-8 min-w-0 max-w-full items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors cursor-pointer sm:max-w-none",
                   agent === "build"
                     ? "text-amber-700 bg-amber-50 hover:bg-amber-100"
                     : "text-blue-700 bg-blue-50 hover:bg-blue-100",
                 )}
                 type="button"
               >
-                {agent === "build" ? <WrenchIcon className="h-3.5 w-3.5" /> : <LightbulbIcon className="h-3.5 w-3.5" />}
-                {agent === "build" ? "Build" : "Plan"}
-                <Settings2Icon className="h-2.5 w-2.5 opacity-60" />
+                {agent === "build" ? <WrenchIcon className="h-3.5 w-3.5 shrink-0" /> : <LightbulbIcon className="h-3.5 w-3.5 shrink-0" />}
+                <span className="truncate">{agent === "build" ? "Build Agent" : "Plan Agent"}</span>
+                <Settings2Icon className="h-2.5 w-2.5 shrink-0 opacity-60" />
               </button>
 
               <AnimatePresence>
@@ -317,7 +317,7 @@ export function CommandInput({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ type: "spring", duration: 0.3 }}
-                      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+6rem)] z-[60] overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl md:absolute md:bottom-full md:left-0 md:right-auto md:mb-2 md:w-48"
+                      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[60] overflow-hidden rounded-2xl border border-stone-200 bg-white p-1.5 shadow-xl sm:inset-x-4 md:inset-x-auto md:absolute md:bottom-full md:left-0 md:right-auto md:top-auto md:mb-2 md:w-64"
                     >
                       <button
                         onClick={() => {
@@ -368,7 +368,7 @@ export function CommandInput({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
             <div className="relative">
               <button
                 onClick={() => setIsActionMenuOpen((current) => !current)}
@@ -407,7 +407,7 @@ export function CommandInput({
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 10, scale: 0.95 }}
                       transition={{ type: "spring", duration: 0.25 }}
-                      className="absolute bottom-full right-0 z-50 mb-2 w-40 overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl"
+                      className="absolute bottom-full right-0 z-50 mb-2 w-[min(18rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl sm:w-40"
                     >
                       <button
                         onClick={() => {
