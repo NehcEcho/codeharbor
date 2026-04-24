@@ -621,6 +621,16 @@ function App() {
 
     try {
       if (revertMessageId) {
+        setSessions((current) =>
+          current.map((session) =>
+            session.id === selectedSessionId
+              ? {
+                  ...session,
+                  revert: null,
+                }
+              : session,
+          ),
+        );
         const restoredSession = await opencodeApi.unrevertSession(config, selectedSessionId);
         setSessions((current) => upsertSession(current, restoredSession));
       }

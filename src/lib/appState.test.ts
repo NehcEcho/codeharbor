@@ -69,6 +69,18 @@ test("getVisibleMessages lets new optimistic messages show after revert boundary
   assert.deepEqual(visible.map((item) => item.id), ["m-1", "m-2", "local-1"]);
 });
 
+test("getVisibleMessages hides optimistic resend while revert boundary is still active", () => {
+  const source = [
+    message("m-1", "first", { createdAt: 100 }),
+    message("m-2", "second", { createdAt: 200 }),
+    message("local-1", "replacement", { createdAt: 300, isPending: true }),
+  ];
+
+  const visible = getVisibleMessages(source, "m-2");
+
+  assert.deepEqual(visible.map((item) => item.id), ["m-1"]);
+});
+
 test("appendMessageDelta appends to existing non-text part fields", () => {
   const current: ChatMessage[] = [
     {
