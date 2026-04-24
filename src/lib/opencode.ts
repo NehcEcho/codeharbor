@@ -32,6 +32,26 @@ function withAuthHeaders(config: ServerConfig, headers?: HeadersInit) {
   };
 }
 
+async function parseErrorResponse(response: Response, fallback: string) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      const data = (await response.json()) as { error?: string; message?: string };
+      if (typeof data.error === "string" && data.error) return data.error;
+      if (typeof data.message === "string" && data.message) return data.message;
+    } catch {
+      return fallback;
+    }
+  }
+
+  try {
+    const text = await response.text();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function request<T>(
   config: ServerConfig,
   path: string,
@@ -43,7 +63,7 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
+    const errorText = await parseErrorResponse(response, `Request failed: ${response.status}`);
     throw new Error(errorText || `Request failed: ${response.status}`);
   }
 
@@ -65,7 +85,7 @@ async function requestPage<T>(
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
+    const errorText = await parseErrorResponse(response, `Request failed: ${response.status}`);
     throw new Error(errorText || `Request failed: ${response.status}`);
   }
 
@@ -91,7 +111,7 @@ async function streamRequest(
   });
 
   if (!response.ok || !response.body) {
-    const errorText = await response.text();
+    const errorText = await parseErrorResponse(response, `Stream failed: ${response.status}`);
     throw new Error(errorText || `Stream failed: ${response.status}`);
   }
 
@@ -99,40 +119,51 @@ async function streamRequest(
   const decoder = new TextDecoder();
   let buffer = "";
 
+  const emitChunk = (chunk: string) => {
+    const lines = chunk.split(/\r?\n/);
+    let type = "message";
+    const dataLines: string[] = [];
+
+    for (const line of lines) {
+      if (!line || line.startsWith(":")) continue;
+      if (line.startsWith("event:")) {
+        type = line.slice(6).trim() || "message";
+        continue;
+      }
+      if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+
+    const raw = dataLines.join("\n");
+    let data: unknown = raw;
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = raw;
+      }
+    }
+
+    onEvent({ type, data, raw });
+  };
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
     buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
+    const chunks = buffer.split(/\r?\n\r?\n/);
     buffer = chunks.pop() || "";
 
     for (const chunk of chunks) {
-      const lines = chunk.split(/\r?\n/);
-      let type = "message";
-      const dataLines: string[] = [];
-
-      for (const line of lines) {
-        if (line.startsWith("event:")) {
-          type = line.slice(6).trim() || "message";
-        }
-        if (line.startsWith("data:")) {
-          dataLines.push(line.slice(5).trimStart());
-        }
-      }
-
-      const raw = dataLines.join("\n");
-      let data: unknown = raw;
-      if (raw) {
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          data = raw;
-        }
-      }
-
-      onEvent({ type, data, raw });
+      emitChunk(chunk);
     }
+  }
+
+  const finalChunk = `${buffer}${decoder.decode()}`.trim();
+  if (finalChunk) {
+    emitChunk(finalChunk);
   }
 }
 

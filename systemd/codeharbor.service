@@ -9,7 +9,7 @@ User=root
 WorkingDirectory=/root/codeharbor
 Environment=HOST=0.0.0.0
 Environment=PORT=1657
-ExecStart=/usr/local/bin/node /root/codeharbor/server.mjs
+ExecStart=/usr/local/bin/node /root/codeharbor/scripts/server.mjs
 Restart=always
 RestartSec=3
 

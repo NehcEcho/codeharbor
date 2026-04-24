@@ -86,7 +86,7 @@ export function CommandInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!value.trim()) return;
+      if (!value.trim() || isSending) return;
       onSend();
     }
   };
@@ -99,7 +99,7 @@ export function CommandInput({
   });
 
   const handleRunCommandClick = () => {
-    if (!selectedCommandName || runningCommandName) return;
+    if (!selectedCommandName || runningCommandName || isBusy || isSending) return;
     onRunCommand(selectedCommandName, commandArguments.trim());
     setCommandArguments("");
     setCommandQuery("");
@@ -125,12 +125,17 @@ export function CommandInput({
             }
           className="w-full bg-transparent px-4 py-4 min-h-[56px] max-h-[200px] resize-none focus:outline-none text-[15px] text-stone-800 placeholder-stone-400 font-sans leading-relaxed"
           rows={1}
-          disabled={false}
+          disabled={Boolean(runningCommandName)}
         />
 
         <div className="flex items-center justify-between gap-2 px-3 pb-3">
           <div className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap">
-            <button className="rounded-lg p-1.5 text-stone-400 transition-colors cursor-pointer active:scale-95 hover:bg-stone-100 hover:text-stone-700" title="Attach file">
+            <button
+              className="rounded-lg p-1.5 text-stone-300 transition-colors cursor-not-allowed"
+              title="Attachments are not available yet"
+              type="button"
+              disabled
+            >
               <PaperclipIcon className="w-5 h-5" />
             </button>
             <div className="h-4 w-[1px] bg-stone-200 mx-1" />
@@ -263,7 +268,7 @@ export function CommandInput({
                         <button
                           type="button"
                           onClick={handleRunCommandClick}
-                          disabled={!selectedCommandName || Boolean(runningCommandName)}
+                          disabled={!selectedCommandName || Boolean(runningCommandName) || isBusy || isSending}
                           className={clsx(
                             "flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
                             selectedCommandName && !runningCommandName
@@ -474,10 +479,10 @@ export function CommandInput({
 
             <button
               onClick={onSend}
-              disabled={!value.trim()}
+              disabled={!value.trim() || Boolean(runningCommandName) || isSending}
               className={clsx(
                 "flex items-center justify-center rounded-lg px-2.5 py-2 transition-all cursor-pointer",
-                value.trim()
+                value.trim() && !isSending
                   ? "bg-stone-900 text-white hover:bg-stone-800 shadow-sm active:scale-95"
                   : "bg-stone-100 text-stone-400",
               )}

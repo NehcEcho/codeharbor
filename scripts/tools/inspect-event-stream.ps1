@@ -4,7 +4,7 @@ $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("opencode:open
 $headers = @{ Authorization = "Basic $auth" }
 
 $sessionBody = @{ title = "stream inspection" } | ConvertTo-Json
-$session = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:4096/session" -Headers $headers -ContentType "application/json" -Body $sessionBody
+$session = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:1656/session" -Headers $headers -ContentType "application/json" -Body $sessionBody
 $sessionId = $session.id
 
 Write-Output "SESSION:$sessionId"
@@ -12,7 +12,7 @@ Write-Output "SESSION:$sessionId"
 $eventJob = Start-Job -ScriptBlock {
   param($authHeader)
 
-  $request = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:4096/event")
+  $request = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:1656/event")
   $request.Headers.Add("Authorization", $authHeader)
   $request.Accept = "text/event-stream"
   $request.Timeout = 30000
@@ -48,7 +48,7 @@ $messageBody = @{
   )
 } | ConvertTo-Json -Depth 5
 
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:4096/session/$sessionId/message" -Headers $headers -ContentType "application/json" -Body $messageBody | Out-Null
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:1656/session/$sessionId/message" -Headers $headers -ContentType "application/json" -Body $messageBody | Out-Null
 
 Start-Sleep -Seconds 8
 
@@ -56,5 +56,8 @@ Stop-Job $eventJob -ErrorAction SilentlyContinue | Out-Null
 $output = Receive-Job $eventJob -Keep
 Remove-Job $eventJob -Force | Out-Null
 
-$output | Set-Content -Path "event-sample.log"
+$logRoot = Join-Path $PSScriptRoot "..\..\.runtime\logs"
+New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
+$logFile = Join-Path $logRoot "event-stream.log"
+$output | Set-Content -Path $logFile
 $output | Select-Object -First 200

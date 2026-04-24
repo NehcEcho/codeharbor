@@ -1,6 +1,7 @@
 import type { ServerConfig } from "../types";
 
 const STORAGE_KEY = "opencode-remote-config";
+const MODEL_STORAGE_KEY = "opencode-remote-model";
 
 export function loadServerConfig(): ServerConfig {
   const fallback: ServerConfig = {
@@ -12,13 +13,16 @@ export function loadServerConfig(): ServerConfig {
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return fallback;
+    const savedModel = window.sessionStorage.getItem(MODEL_STORAGE_KEY) || "";
+    if (!raw) {
+      return { ...fallback, model: savedModel };
+    }
     const parsed = JSON.parse(raw) as Partial<Omit<ServerConfig, "model">>;
     return {
       baseUrl: parsed.baseUrl || fallback.baseUrl,
       username: parsed.username || fallback.username,
       password: parsed.password || fallback.password,
-      model: fallback.model,
+      model: savedModel,
     };
   } catch {
     return fallback;
@@ -34,4 +38,11 @@ export function saveServerConfig(config: ServerConfig) {
       password: config.password,
     }),
   );
+
+  if (config.model) {
+    window.sessionStorage.setItem(MODEL_STORAGE_KEY, config.model);
+    return;
+  }
+
+  window.sessionStorage.removeItem(MODEL_STORAGE_KEY);
 }

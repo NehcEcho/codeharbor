@@ -1,0 +1,280 @@
+import type {
+  ChatMessage,
+  MessageEnvelope,
+  PermissionRequest,
+  QuestionRequest,
+  Session,
+} from "../types";
+
+export function normalizeBaseUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
+}
+
+export function formatTimestamp(timestamp?: number) {
+  if (!timestamp) return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function mapMessageUsage(info: MessageEnvelope["info"]): ChatMessage["usage"] | undefined {
+  if (!info.tokens) return undefined;
+
+  return {
+    contextInput: info.tokens.input,
+    output: info.tokens.output,
+    reasoning: info.tokens.reasoning,
+    cacheRead: info.tokens.cache.read,
+    cacheWrite: info.tokens.cache.write,
+    total: info.tokens.total,
+  };
+}
+
+export function mapMessageEnvelope(message: MessageEnvelope): ChatMessage {
+  const role = (message.info.role || "assistant") as ChatMessage["role"];
+  const createdAt = message.info.time?.created || message.info.time?.updated;
+  return {
+    id: message.info.id,
+    role,
+    parts: message.parts,
+    timestampLabel: formatTimestamp(createdAt),
+    createdAt,
+    usage: mapMessageUsage(message.info),
+    status: role === "tool" ? "success" : undefined,
+  };
+}
+
+function mergePartLists(currentParts: ChatMessage["parts"], nextParts: ChatMessage["parts"]) {
+  const merged = [...currentParts];
+
+  for (const nextPart of nextParts) {
+    const nextPartId = typeof nextPart.id === "string" ? nextPart.id : undefined;
+    const partIndex = nextPartId ? merged.findIndex((item) => item.id === nextPartId) : -1;
+
+    if (partIndex >= 0) {
+      merged[partIndex] = { ...merged[partIndex], ...nextPart };
+    } else {
+      merged.push({ ...nextPart });
+    }
+  }
+
+  return merged;
+}
+
+export function upsertMessagesById(current: ChatMessage[], next: ChatMessage[]) {
+  const merged = [...current];
+
+  for (const message of next) {
+    const messageIndex = merged.findIndex((item) => item.id === message.id);
+
+    if (messageIndex >= 0) {
+      const existing = merged[messageIndex];
+      merged[messageIndex] = {
+        ...existing,
+        ...message,
+        isPending: message.isPending ?? false,
+        deliveryError: message.deliveryError,
+        parts: mergePartLists(existing.parts, message.parts),
+      };
+      continue;
+    }
+
+    merged.push(message);
+  }
+
+  return sortMessages(merged);
+}
+
+export function prependOlderMessages(current: ChatMessage[], olderPage: ChatMessage[]) {
+  const knownIds = new Set(current.map((message) => message.id));
+  const olderOnly = olderPage.filter((message) => !knownIds.has(message.id));
+  return sortMessages([...olderOnly, ...current]);
+}
+
+export function confirmOptimisticMessage(
+  current: ChatMessage[],
+  optimisticMessageId: string,
+  confirmedMessage: ChatMessage,
+) {
+  const withoutOptimistic = current.filter((message) => message.id !== optimisticMessageId && message.id !== confirmedMessage.id);
+  return sortMessages([...withoutOptimistic, { ...confirmedMessage, isPending: false, deliveryError: undefined }]);
+}
+
+export function mergeMessages(current: ChatMessage[], next: ChatMessage[]) {
+  return upsertMessagesById(current, next);
+}
+
+export function sortMessages(messages: ChatMessage[]) {
+  return [...messages].sort((left, right) => {
+    const leftTime = left.createdAt || 0;
+    const rightTime = right.createdAt || 0;
+    if (leftTime !== rightTime) return leftTime - rightTime;
+    return left.id.localeCompare(right.id);
+  });
+}
+
+export function upsertMessageInfo(current: ChatMessage[], info: MessageEnvelope["info"]) {
+  const role = (info.role || "assistant") as ChatMessage["role"];
+  const existing = current.find((message) => message.id === info.id);
+
+  if (existing) {
+    return current.map((message) =>
+      message.id === info.id
+        ? {
+            ...message,
+            role,
+            timestampLabel: formatTimestamp(info.time?.created || info.time?.updated),
+            createdAt: info.time?.created || info.time?.updated || message.createdAt,
+            usage: mapMessageUsage(info),
+            isPending: false,
+            deliveryError: undefined,
+          }
+        : message,
+    );
+  }
+
+  return sortMessages([
+    ...current,
+    {
+      id: info.id,
+      role,
+      parts: [],
+      timestampLabel: formatTimestamp(info.time?.created || info.time?.updated),
+      createdAt: info.time?.created || info.time?.updated,
+      usage: mapMessageUsage(info),
+      status: role === "tool" ? "success" : undefined,
+    },
+  ]);
+}
+
+export function upsertMessagePart(
+  current: ChatMessage[],
+  part: { messageID?: string; id?: string; type?: string; text?: string },
+) {
+  if (!part.messageID || !part.id) return current;
+
+  return current.map((message) => {
+    if (message.id !== part.messageID) return message;
+
+    const nextParts = [...message.parts];
+    const partIndex = nextParts.findIndex((item) => item.id === part.id);
+    if (partIndex >= 0) {
+      nextParts[partIndex] = { ...nextParts[partIndex], ...part };
+    } else {
+      nextParts.push({ ...part });
+    }
+
+    return { ...message, parts: nextParts };
+  });
+}
+
+export function appendMessageDelta(
+  current: ChatMessage[],
+  payload: { messageID?: string; partID?: string; field?: string; delta?: string },
+) {
+  const field = payload.field;
+  if (!payload.messageID || !payload.partID || !field) return current;
+
+  return current.map((message) => {
+    if (message.id !== payload.messageID) return message;
+
+    const nextParts = [...message.parts];
+    const partIndex = nextParts.findIndex((item) => item.id === payload.partID);
+
+    if (partIndex >= 0) {
+      const currentValue = nextParts[partIndex][field];
+      if (typeof currentValue === "string" || currentValue === undefined) {
+        nextParts[partIndex] = {
+          ...nextParts[partIndex],
+          [field]: `${typeof currentValue === "string" ? currentValue : ""}${payload.delta || ""}`,
+        };
+      }
+      return { ...message, parts: nextParts };
+    }
+
+    nextParts.push({ id: payload.partID, [field]: payload.delta || "" });
+
+    return { ...message, parts: nextParts };
+  });
+}
+
+export function upsertSession(current: Session[], nextSession: Session) {
+  const found = current.some((session) => session.id === nextSession.id);
+  const next = found
+    ? current.map((session) => (session.id === nextSession.id ? { ...session, ...nextSession } : session))
+    : [...current, nextSession];
+
+  return [...next].sort((left, right) => (right.time?.updated || 0) - (left.time?.updated || 0));
+}
+
+export function upsertQuestionRequest(current: QuestionRequest[], nextRequest: QuestionRequest) {
+  const existingIndex = current.findIndex((item) => item.id === nextRequest.id);
+  if (existingIndex >= 0) {
+    const next = [...current];
+    next[existingIndex] = nextRequest;
+    return next;
+  }
+  return [...current, nextRequest];
+}
+
+export function removeQuestionRequest(current: QuestionRequest[], requestId: string) {
+  return current.filter((item) => item.id !== requestId);
+}
+
+export function upsertPermissionRequest(current: PermissionRequest[], nextRequest: PermissionRequest) {
+  const existingIndex = current.findIndex((item) => item.id === nextRequest.id);
+  if (existingIndex >= 0) {
+    const next = [...current];
+    next[existingIndex] = nextRequest;
+    return next;
+  }
+  return [...current, nextRequest];
+}
+
+export function removePermissionRequest(current: PermissionRequest[], requestId: string) {
+  return current.filter((item) => item.id !== requestId);
+}
+
+export function markMessageDeliveryFailed(current: ChatMessage[], optimisticMessageId: string, error: string) {
+  return current.map((message) =>
+    message.id === optimisticMessageId
+      ? {
+          ...message,
+          isPending: false,
+          deliveryError: error,
+        }
+      : message,
+  );
+}
+
+export function getLatestUserMessageTarget(messages: ChatMessage[]) {
+  const userMessage = [...messages].reverse().find((message) => message.role === "user" && !message.isPending);
+  if (!userMessage) return null;
+
+  const text = userMessage.parts
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text as string)
+    .join("");
+
+  return {
+    id: userMessage.id,
+    text,
+  };
+}
+
+export function getVisibleMessages(messages: ChatMessage[], revertMessageID?: string | null) {
+  if (!revertMessageID) return messages;
+  const sorted = sortMessages(messages);
+  const revertIndex = sorted.findIndex((message) => message.id === revertMessageID);
+  if (revertIndex < 0) return sorted;
+  return sorted.slice(0, revertIndex);
+}
+
+export function normalizeSessionStatus(status: unknown) {
+  if (typeof status === "string") return status;
+  if (status && typeof status === "object" && "type" in status) {
+    const type = (status as { type?: unknown }).type;
+    if (typeof type === "string") return type;
+  }
+  return "idle";
+}

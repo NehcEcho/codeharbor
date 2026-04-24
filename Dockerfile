@@ -17,7 +17,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/server.mjs ./server.mjs
+COPY --from=build /app/scripts ./scripts
 
 EXPOSE 4173
 CMD ["npm", "run", "start"]

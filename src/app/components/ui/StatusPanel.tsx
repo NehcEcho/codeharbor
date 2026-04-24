@@ -1,7 +1,7 @@
 import { BotIcon, ShieldAlertIcon } from "./icons";
 import { PermissionCard } from "../chat/PermissionCard";
 import { QuestionCard } from "../chat/QuestionCard";
-import type { PermissionRequest, QuestionRequest } from "../../../types";
+import type { PermissionRequest, QuestionActionResult, QuestionRequest } from "../../../types";
 
 export function StatusPanel({
   permissionRequests,
@@ -15,8 +15,8 @@ export function StatusPanel({
   questionRequests: QuestionRequest[];
   respondingPermissionId?: string | null;
   onPermissionAction: (id: string, action: "once" | "always" | "reject") => Promise<void>;
-  onQuestionReply: (id: string, answers: string[][]) => Promise<void>;
-  onQuestionReject: (id: string) => Promise<void>;
+  onQuestionReply: (id: string, answers: string[][]) => Promise<QuestionActionResult>;
+  onQuestionReject: (id: string) => Promise<QuestionActionResult>;
 }) {
   const totalCount = permissionRequests.length + questionRequests.length;
   const hasPendingActions = totalCount > 0;

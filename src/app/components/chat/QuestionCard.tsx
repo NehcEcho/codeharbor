@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { clsx } from "clsx";
-import type { QuestionRequest } from "../../../types";
+import type { QuestionActionResult, QuestionRequest } from "../../../types";
 import { BotIcon, CheckIcon, XIcon } from "../ui/icons";
 
 type AnswersMap = Record<number, string[]>;
@@ -11,12 +11,14 @@ export function QuestionCard({
   onReject,
 }: {
   request: QuestionRequest;
-  onReply: (answers: string[][]) => Promise<void>;
-  onReject: () => Promise<void>;
+  onReply: (answers: string[][]) => Promise<QuestionActionResult>;
+  onReject: () => Promise<QuestionActionResult>;
 }) {
   const [answers, setAnswers] = useState<AnswersMap>({});
   const [customAnswers, setCustomAnswers] = useState<Record<number, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const supportsCustomAnswer = (question: QuestionRequest["questions"][number]) => question.custom === true;
 
   const normalizedAnswers = useMemo(
     () =>
@@ -59,9 +61,13 @@ export function QuestionCard({
 
   const handleReply = async () => {
     if (!isComplete || isSubmitting) return;
+    setSubmitError(null);
     setIsSubmitting(true);
     try {
-      await onReply(normalizedAnswers);
+      const result = await onReply(normalizedAnswers);
+      if (!result.ok) {
+        setSubmitError(result.error || "提交回答失败，请稍后重试。");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -69,9 +75,13 @@ export function QuestionCard({
 
   const handleReject = async () => {
     if (isSubmitting) return;
+    setSubmitError(null);
     setIsSubmitting(true);
     try {
-      await onReject();
+      const result = await onReject();
+      if (!result.ok) {
+        setSubmitError(result.error || "忽略问题失败，请稍后重试。");
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -127,7 +137,7 @@ export function QuestionCard({
                 })}
               </div>
 
-              {item.custom !== false ? (
+              {supportsCustomAnswer(item) ? (
                 <div className="mt-3">
                   <input
                     type="text"
@@ -162,6 +172,12 @@ export function QuestionCard({
             忽略
           </button>
         </div>
+
+        {submitError ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {submitError}
+          </div>
+        ) : null}
       </div>
     </div>
   );

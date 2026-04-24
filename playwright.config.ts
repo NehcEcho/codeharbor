@@ -8,4 +8,10 @@ export default defineConfig({
     headless: true,
   },
   reporter: "list",
+  webServer: {
+    command: "npm run dev -- --host 127.0.0.1 --port 1657",
+    url: "http://127.0.0.1:1657",
+    reuseExistingServer: true,
+    timeout: 120_000,
+  },
 });

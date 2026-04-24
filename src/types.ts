@@ -147,6 +147,7 @@ export type ChatMessage = {
   role: "user" | "assistant" | "tool" | "permission";
   parts: MessagePart[];
   timestampLabel: string;
+  createdAt?: number;
   usage?: {
     contextInput: number;
     output: number;
@@ -157,6 +158,7 @@ export type ChatMessage = {
   };
   status?: "success" | "approved" | "denied" | "pending" | "running";
   isPending?: boolean;
+  deliveryError?: string;
 };
 
 export type CreateSessionRequest = {
@@ -181,4 +183,9 @@ export type AppEvent = {
   type: string;
   data: unknown;
   raw?: string;
+};
+
+export type QuestionActionResult = {
+  ok: boolean;
+  error?: string;
 };

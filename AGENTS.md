@@ -5,7 +5,7 @@
 - Install deps: `npm install`
 - Main verification: `npm run build`
 - Dev server: `npm run dev` on `0.0.0.0:1657`
-- Production server: `npm run start` serves `dist/` via `server.mjs`
+- Production server: `npm run start` serves `dist/` via `scripts/server.mjs`
 - E2E entrypoint: `npm run test:e2e`
 
 ## Verification Notes
@@ -28,22 +28,22 @@
 
 - Both dev and production use the same proxy prefix: `/api/opencode`.
 - The proxy expects these headers from the frontend: `x-opencode-base-url`, `x-opencode-username`, `x-opencode-password`.
-- The proxy converts those headers into upstream Basic Auth. If backend calls break, inspect `vite.config.ts` for dev and `server.mjs` for production before changing UI code.
+- The proxy converts those headers into upstream Basic Auth. If backend calls break, inspect `vite.config.ts` for dev and `scripts/server.mjs` for production before changing UI code.
 - Event streaming is proxied too; both proxy implementations have explicit `text/event-stream` handling.
 
 ## Default Local Setup
 
 - Default OpenCode port: `1656`
 - Default web UI port: `1657`
-- Default local credentials used by bundled scripts:
+- Default local credentials used by the stack runner:
   - username: `opencode`
   - password: `opencode-demo-4096`
 
 ## Launch Scripts
 
-- `start-opencode-remote.sh` / `.ps1` are the highest-signal local startup flows.
-- They do more than start the frontend: they stop old processes, start `opencode serve`, wait for backend health, run `npm run build`, then start the production web server.
-- Linux launcher writes runtime state to `.opencode-remote-runtime.json` and logs to `/tmp/opencode-remote-*.log`.
+- `npm run stack -- up` is the highest-signal local startup flow.
+- It does more than start the frontend: it stops old managed processes, starts `opencode serve`, waits for backend health, runs `npm run build`, then starts the production web server.
+- Runtime state lives under `.runtime/local-stack.json` and logs live under `.runtime/logs/`.
 
 ## Deployment Notes
 

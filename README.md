@@ -7,7 +7,7 @@ It provides:
 - a session list for remote coding tasks
 - a chat-style workspace with streaming updates
 - a lightweight permission queue on the right side
-- local launch scripts for Windows and Linux
+- a single cross-platform local stack runner
 - optional Docker Compose deployment
 
 ## Default ports
@@ -19,7 +19,7 @@ OpenCode server: 1656
 Web UI:          1657
 ```
 
-If you start the bundled scripts, use these values unless you intentionally change the scripts.
+If you start the bundled local stack runner, use these values unless you intentionally change the environment.
 
 ## Stack
 
@@ -73,7 +73,7 @@ The production server also listens on port `1657` unless overridden with environ
 
 ## Default local OpenCode server credentials
 
-The bundled local launch scripts use these defaults:
+The bundled local stack runner uses these defaults:
 
 ```text
 Server URL: http://127.0.0.1:1656
@@ -81,64 +81,52 @@ Username:   opencode
 Password:   opencode-demo-4096
 ```
 
-## Windows launch scripts
+## Local stack runner
 
-### One-click launcher
+Use the built-in runner instead of separate top-level start/stop scripts.
 
-```bat
-start-opencode-remote.cmd
+Start the full local stack:
+
+```bash
+npm run stack -- up
 ```
 
-This uses the PowerShell helper script to:
+This will:
 
+- stop any previously started local stack from this runner
 - start OpenCode on port `1656`
-- build and start the production web UI on port `1657`
-- open the browser
+- run `npm run build`
+- start the production web UI on port `1657`
+- try to open the browser automatically
 
-Files involved:
-
-- `start-opencode-remote.cmd`
-- `start-opencode-remote.ps1`
-- `stop-opencode-remote.cmd`
-- `stop-opencode-remote.ps1`
-
-### Stop everything
-
-```bat
-stop-opencode-remote.cmd
-```
-
-## Linux launch scripts
-
-Make them executable first:
+Stop it:
 
 ```bash
-chmod +x start-opencode-remote.sh stop-opencode-remote.sh
+npm run stack -- down
 ```
 
-Start:
+Restart it:
 
 ```bash
-./start-opencode-remote.sh
+npm run stack -- restart
 ```
 
-Stop:
+Check status:
 
 ```bash
-./stop-opencode-remote.sh
+npm run stack -- status
 ```
 
-The Linux launcher will:
+Skip browser launch:
 
-- start OpenCode on port `1656`
-- build and start the production web UI on port `1657`
-- try to open a browser
-- stop both processes when you press Enter
+```bash
+npm run stack -- up --no-browser
+```
 
-Files involved:
+Runtime state and logs live under:
 
-- `start-opencode-remote.sh`
-- `stop-opencode-remote.sh`
+- `.runtime/local-stack.json`
+- `.runtime/logs/`
 
 ## Docker Compose
 
@@ -160,7 +148,7 @@ Stop it with:
 docker compose down
 ```
 
-More notes are in `DEPLOY.md`.
+More notes are in `docs/deployment.md`.
 
 ## Systemd production startup
 
@@ -206,7 +194,7 @@ sudo systemctl restart codeharbor.service
 
 ## Manual OpenCode startup
 
-If you do not want to use the bundled scripts, you can run OpenCode yourself:
+If you do not want to use the local stack runner, you can run OpenCode yourself:
 
 ```bash
 OPENCODE_SERVER_USERNAME=opencode OPENCODE_SERVER_PASSWORD=opencode-demo-4096 opencode serve --hostname 0.0.0.0 --port 1656
@@ -442,10 +430,11 @@ Password:   opencode-demo-4096
 
 ```text
 src/                     app source
+scripts/server.mjs       production static server and OpenCode proxy
+scripts/run.mjs          local stack runner
+scripts/tools/           optional local helper scripts
 tests/                   Playwright tests
-server.mjs               production static server and OpenCode proxy
-start-opencode-remote.*  local startup scripts
-stop-opencode-remote.*   local shutdown scripts
+docs/                    deployment notes
 docker-compose.yml       container deployment
 Dockerfile               production image
 ```
@@ -458,7 +447,7 @@ Dockerfile               production image
 
 ## Common workflow
 
-1. Start the bundled script for your platform
+1. Start the local stack runner with `npm run stack -- up`
 2. Open `http://127.0.0.1:1657`
 3. Confirm the connection settings point to `http://127.0.0.1:1656`
 4. Start or resume a coding session

@@ -9,22 +9,40 @@ const __dirname = path.dirname(__filename);
 
 const HOST = process.env.HOST || "0.0.0.0";
 const PORT = Number(process.env.PORT || 1657);
-const DIST_DIR = path.join(__dirname, "dist");
+const DIST_DIR = path.join(__dirname, "..", "dist");
 const INDEX_HTML = path.join(DIST_DIR, "index.html");
 const PROXY_PREFIX = "/api/opencode";
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
+  ".gif": "image/gif",
   ".html": "text/html; charset=utf-8",
+  ".jpg": "image/jpeg",
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
+  ".webp": "image/webp",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
 };
+
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+  "content-length",
+  "host",
+]);
 
 function trimTrailingSlash(value) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -42,6 +60,32 @@ function readRequestBody(req) {
     req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+function createUpstreamHeaders(req, username, password) {
+  const headers = new Headers();
+
+  Object.entries(req.headers).forEach(([key, value]) => {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey.startsWith("x-opencode-")) return;
+    if (normalizedKey === "authorization") return;
+    if (HOP_BY_HOP_HEADERS.has(normalizedKey)) return;
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => headers.append(key, item));
+      return;
+    }
+
+    if (typeof value === "string") {
+      headers.set(key, value);
+    }
+  });
+
+  headers.set("Authorization", `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`);
+  if (!headers.has("Content-Type") && typeof req.headers["content-type"] === "string") {
+    headers.set("Content-Type", req.headers["content-type"]);
+  }
+  return headers;
 }
 
 async function proxyOpencodeRequest(req, res) {
@@ -64,20 +108,18 @@ async function proxyOpencodeRequest(req, res) {
 
   try {
     const method = req.method || "GET";
-    const wantsEventStream = (req.headers.accept || "").includes("text/event-stream") || upstreamPath.startsWith("/event");
+    const wantsEventStream = (req.headers.accept || "").includes("text/event-stream");
     const body = method === "GET" || method === "HEAD" ? undefined : await readRequestBody(req);
     const response = await fetch(targetUrl, {
       method,
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`,
-        "Content-Type": req.headers["content-type"] || "application/json",
-      },
+      headers: createUpstreamHeaders(req, username, password),
       body: body ? new Uint8Array(body) : undefined,
     });
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => {
       if (key.toLowerCase() === "content-encoding") return;
+      if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) return;
       res.setHeader(key, value);
     });
 
@@ -111,6 +153,10 @@ async function serveStaticAsset(req, res) {
   }
 
   const isFileRequest = path.extname(normalizedPath) !== "";
+  if (isFileRequest && !existsSync(normalizedPath)) {
+    sendJson(res, 404, { error: "Not found" });
+    return;
+  }
   const filePath = isFileRequest && existsSync(normalizedPath) ? normalizedPath : INDEX_HTML;
 
   try {

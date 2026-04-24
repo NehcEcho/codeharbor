@@ -1,6 +1,43 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MainLayout } from "./app/components/layouts/MainLayout";
 import { opencodeApi } from "./lib/opencode";
+import {
+  findPermissionSessionId,
+  findQuestionSessionId,
+  getSessionCursor,
+  isLatestSessionRequest,
+  isLatestSessionMessageRequest,
+  nextSessionRequestSeq,
+  nextSessionMessageRequestSeq,
+  pruneSessionRecord,
+  setSessionCursor,
+  shouldBlockDuplicateSend,
+  shouldClearSendSubmissionGuard,
+  shouldRestoreFailedDraft,
+  type MessageRequestKind,
+  type SendSubmissionGuard,
+} from "./lib/appController";
+import {
+  appendMessageDelta,
+  confirmOptimisticMessage,
+  formatTimestamp,
+  getLatestUserMessageTarget,
+  getVisibleMessages,
+  mapMessageEnvelope,
+  markMessageDeliveryFailed,
+  normalizeBaseUrl,
+  normalizeSessionStatus,
+  prependOlderMessages,
+  sortMessages,
+  upsertMessagesById,
+  upsertMessageInfo,
+  upsertMessagePart,
+  upsertPermissionRequest,
+  upsertQuestionRequest,
+  upsertSession,
+  removePermissionRequest,
+  removeQuestionRequest,
+} from "./lib/appState";
 import { loadServerConfig, saveServerConfig } from "./lib/storage";
 import type {
   ChatMessage,
@@ -9,208 +46,14 @@ import type {
   ConnectionState,
   MessageEnvelope,
   MessagePage,
-  OpenCodeConfig,
   PermissionRequest,
+  QuestionActionResult,
   QuestionRequest,
   SkillItem,
   ServerConfig,
   Session,
   SessionStatusMap,
 } from "./types";
-
-function normalizeBaseUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
-}
-
-function formatTimestamp(timestamp?: number) {
-  if (!timestamp) return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function mapMessageUsage(info: MessageEnvelope["info"]): ChatMessage["usage"] | undefined {
-  if (!info.tokens) return undefined;
-
-  return {
-    contextInput: info.tokens.input,
-    output: info.tokens.output,
-    reasoning: info.tokens.reasoning,
-    cacheRead: info.tokens.cache.read,
-    cacheWrite: info.tokens.cache.write,
-    total: info.tokens.total,
-  };
-}
-
-function mapMessageEnvelope(message: MessageEnvelope): ChatMessage {
-  const role = (message.info.role || "assistant") as ChatMessage["role"];
-  return {
-    id: message.info.id,
-    role,
-    parts: message.parts,
-    timestampLabel: formatTimestamp(message.info.time?.created || message.info.time?.updated),
-    usage: mapMessageUsage(message.info),
-    status: role === "tool" ? "success" : undefined,
-  };
-}
-
-function messageSignature(message: ChatMessage) {
-  return message.parts
-    .map((part) => (typeof part.text === "string" ? `${part.type || "text"}:${part.text}` : ""))
-    .join("|");
-}
-
-function mergeMessages(current: ChatMessage[], next: ChatMessage[]) {
-  const pending = current.filter((message) => message.isPending);
-  const nextIds = new Set(next.map((message) => message.id));
-
-  const pendingWithText = new Set(pending.map(messageSignature));
-
-  const confirmed = next.map((message) => {
-    const signature = messageSignature(message);
-
-    if (message.role === "user" && pendingWithText.has(signature)) {
-      return { ...message, isPending: false };
-    }
-
-    return message;
-  });
-
-  const confirmedText = new Set(confirmed.map(messageSignature));
-
-  return [
-    ...confirmed,
-    ...pending.filter((message) => {
-      if (nextIds.has(message.id)) return false;
-      const signature = messageSignature(message);
-      return !confirmedText.has(signature);
-    }),
-  ];
-}
-
-function sortMessages(messages: ChatMessage[]) {
-  return [...messages].sort((left, right) => left.id.localeCompare(right.id));
-}
-
-function upsertMessageInfo(current: ChatMessage[], info: MessageEnvelope["info"]) {
-  const role = (info.role || "assistant") as ChatMessage["role"];
-  const existing = current.find((message) => message.id === info.id);
-
-  if (existing) {
-    return current.map((message) =>
-      message.id === info.id
-        ? {
-            ...message,
-            role,
-            timestampLabel: formatTimestamp(info.time?.created || info.time?.updated),
-            usage: mapMessageUsage(info),
-            isPending: false,
-          }
-        : message,
-    );
-  }
-
-  return sortMessages([
-    ...current,
-      {
-        id: info.id,
-        role,
-        parts: [],
-        timestampLabel: formatTimestamp(info.time?.created || info.time?.updated),
-        usage: mapMessageUsage(info),
-        status: role === "tool" ? "success" : undefined,
-      },
-    ]);
-}
-
-function upsertMessagePart(current: ChatMessage[], part: { messageID?: string; id?: string; type?: string; text?: string }) {
-  if (!part.messageID || !part.id) return current;
-
-  return current.map((message) => {
-    if (message.id !== part.messageID) return message;
-
-    const nextParts = [...message.parts];
-    const partIndex = nextParts.findIndex((item) => item.id === part.id);
-    if (partIndex >= 0) {
-      nextParts[partIndex] = { ...nextParts[partIndex], ...part };
-    } else {
-      nextParts.push({ ...part });
-    }
-
-    return { ...message, parts: nextParts };
-  });
-}
-
-function appendMessageDelta(
-  current: ChatMessage[],
-  payload: { messageID?: string; partID?: string; field?: string; delta?: string },
-) {
-  if (!payload.messageID || !payload.partID || payload.field !== "text") return current;
-
-  return current.map((message) => {
-    if (message.id !== payload.messageID) return message;
-
-    const nextParts = [...message.parts];
-    const partIndex = nextParts.findIndex((item) => item.id === payload.partID);
-
-    if (partIndex >= 0) {
-      const currentText = typeof nextParts[partIndex].text === "string" ? nextParts[partIndex].text : "";
-      nextParts[partIndex] = {
-        ...nextParts[partIndex],
-        text: `${currentText}${payload.delta || ""}`,
-      };
-    } else {
-      nextParts.push({ id: payload.partID, type: "text", text: payload.delta || "" });
-    }
-
-    return { ...message, parts: nextParts };
-  });
-}
-
-function reconcilePending(current: ChatMessage[]) {
-  const confirmedUserSignatures = new Set(
-    current.filter((message) => message.role === "user" && !message.isPending).map(messageSignature),
-  );
-
-  return current.filter((message) => !(message.isPending && confirmedUserSignatures.has(messageSignature(message))));
-}
-
-function upsertSession(current: Session[], nextSession: Session) {
-  const found = current.some((session) => session.id === nextSession.id);
-  const next = found
-    ? current.map((session) => (session.id === nextSession.id ? { ...session, ...nextSession } : session))
-    : [...current, nextSession];
-
-  return [...next].sort((left, right) => (right.time?.updated || 0) - (left.time?.updated || 0));
-}
-
-function upsertQuestionRequest(current: QuestionRequest[], nextRequest: QuestionRequest) {
-  const existingIndex = current.findIndex((item) => item.id === nextRequest.id);
-  if (existingIndex >= 0) {
-    const next = [...current];
-    next[existingIndex] = nextRequest;
-    return next;
-  }
-  return [...current, nextRequest].sort((left, right) => left.id.localeCompare(right.id));
-}
-
-function removeQuestionRequest(current: QuestionRequest[], requestId: string) {
-  return current.filter((item) => item.id !== requestId);
-}
-
-function upsertPermissionRequest(current: PermissionRequest[], nextRequest: PermissionRequest) {
-  const existingIndex = current.findIndex((item) => item.id === nextRequest.id);
-  if (existingIndex >= 0) {
-    const next = [...current];
-    next[existingIndex] = nextRequest;
-    return next;
-  }
-  return [...current, nextRequest].sort((left, right) => left.id.localeCompare(right.id));
-}
-
-function removePermissionRequest(current: PermissionRequest[], requestId: string) {
-  return current.filter((item) => item.id !== requestId);
-}
 
 type SessionActivityMap = Record<string, { busySince?: number; lastActivityAt?: number }>;
 
@@ -297,19 +140,9 @@ function resolveCompactionModel(selectedModel: string, providers: ConfigProvider
   return null;
 }
 
-function getLatestUserMessageTarget(messages: ChatMessage[]): SessionActionTarget | null {
-  const userMessage = [...messages].reverse().find((message) => message.role === "user" && !message.isPending);
-  if (!userMessage) return null;
-
-  const text = userMessage.parts
-    .filter((part) => part.type === "text" && typeof part.text === "string")
-    .map((part) => part.text as string)
-    .join("");
-
-  return {
-    id: userMessage.id,
-    text,
-  };
+function removeSessionKey<T>(current: Record<string, T>, sessionId: string) {
+  const { [sessionId]: _removed, ...rest } = current;
+  return rest;
 }
 
 function App() {
@@ -320,14 +153,15 @@ function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [statusMap, setStatusMap] = useState<SessionStatusMap>({});
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [messagesNextCursor, setMessagesNextCursor] = useState<string | null>(null);
+  const [messagesBySession, setMessagesBySession] = useState<Record<string, ChatMessage[]>>({});
+  const [messagesNextCursorBySession, setMessagesNextCursorBySession] = useState<Record<string, string | null>>({});
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [draft, setDraft] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("build");
   const [isSending, setIsSending] = useState(false);
+  const [sendSubmissionGuard, setSendSubmissionGuard] = useState<SendSubmissionGuard | null>(null);
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
-  const [diffCount, setDiffCount] = useState(0);
+  const [diffCountBySession, setDiffCountBySession] = useState<Record<string, number>>({});
   const [events, setEvents] = useState<string[]>([]);
   const [modelProviders, setModelProviders] = useState<ConfigProvider[]>([]);
   const [providerDefaults, setProviderDefaults] = useState<Record<string, string>>({});
@@ -340,21 +174,34 @@ function App() {
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [runningCommandName, setRunningCommandName] = useState<string | null>(null);
-  const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
+  const [permissionRequestsBySession, setPermissionRequestsBySession] = useState<Record<string, PermissionRequest[]>>({});
   const [respondingPermissionId, setRespondingPermissionId] = useState<string | null>(null);
-  const [questionRequests, setQuestionRequests] = useState<QuestionRequest[]>([]);
+  const [questionRequestsBySession, setQuestionRequestsBySession] = useState<Record<string, QuestionRequest[]>>({});
   const [sessionActivity, setSessionActivity] = useState<SessionActivityMap>({});
   const [lastSentDraftBySession, setLastSentDraftBySession] = useState<Record<string, SentMessageDraft>>({});
   const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, QueuedMessage[]>>({});
-  const [dispatchingMessage, setDispatchingMessage] = useState<QueuedMessage | null>(null);
-  const [awaitingSessionCompletion, setAwaitingSessionCompletion] = useState<AwaitingSessionCompletion | null>(null);
+  const [inFlightSessions, setInFlightSessions] = useState<Record<string, true>>({});
+  const [awaitingSessionCompletionBySession, setAwaitingSessionCompletionBySession] = useState<Record<string, AwaitingSessionCompletion>>({});
   const [undoingSessionId, setUndoingSessionId] = useState<string | null>(null);
   const [redoingSessionId, setRedoingSessionId] = useState<string | null>(null);
   const [forkingSessionId, setForkingSessionId] = useState<string | null>(null);
   const [clock, setClock] = useState(() => Date.now());
-  const refreshTimeoutRef = useRef<number | null>(null);
+  const refreshTimeoutsRef = useRef<Record<string, number>>({});
   const reconnectTimeoutRef = useRef<number | null>(null);
   const selectedSessionIdRef = useRef<string | null>(null);
+  const knownSessionIdsRef = useRef<string[]>([]);
+  const configRef = useRef(config);
+  const messageRequestSeqRef = useRef<Record<string, Record<MessageRequestKind, number>>>({});
+  const remoteConfigRequestSeqRef = useRef(0);
+  const modelProvidersRequestSeqRef = useRef(0);
+  const diffRequestSeqRef = useRef<Record<string, number>>({});
+  const questionsRequestSeqRef = useRef<Record<string, number>>({});
+  const permissionsRequestSeqRef = useRef<Record<string, number>>({});
+  const reconnectAttemptRef = useRef(0);
+  const healthFailureCountRef = useRef(0);
+  const inFlightSessionsRef = useRef<Set<string>>(new Set());
+  const permissionRequestsBySessionRef = useRef<Record<string, PermissionRequest[]>>({});
+  const questionRequestsBySessionRef = useRef<Record<string, QuestionRequest[]>>({});
 
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) || null,
@@ -362,15 +209,31 @@ function App() {
   );
 
   selectedSessionIdRef.current = selectedSessionId;
+  configRef.current = config;
+  permissionRequestsBySessionRef.current = permissionRequestsBySession;
+  questionRequestsBySessionRef.current = questionRequestsBySession;
+  knownSessionIdsRef.current = sessions.map((session) => session.id);
 
   const selectedSessionStatus = selectedSessionId ? statusMap[selectedSessionId] : undefined;
   const isSessionBusy = selectedSessionStatus === "busy";
   const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
   const queuedCount = queuedMessages.length;
+  const messages = selectedSessionId ? messagesBySession[selectedSessionId] || [] : [];
+  const messagesNextCursor = useMemo(
+    () => getSessionCursor(messagesNextCursorBySession, selectedSessionId),
+    [messagesNextCursorBySession, selectedSessionId],
+  );
+  const diffCount = selectedSessionId ? diffCountBySession[selectedSessionId] || 0 : 0;
+  const permissionRequests = selectedSessionId ? permissionRequestsBySession[selectedSessionId] || [] : [];
+  const questionRequests = selectedSessionId ? questionRequestsBySession[selectedSessionId] || [] : [];
   const selectedModel = useMemo(() => normalizeModelValue(config.model, modelProviders), [config.model, modelProviders]);
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
-  const latestUserMessageTarget = useMemo(() => getLatestUserMessageTarget(messages), [messages]);
   const canRedoLastMessage = Boolean(selectedSession?.revert?.messageID);
+  const visibleMessages = useMemo(
+    () => getVisibleMessages(messages, selectedSession?.revert?.messageID),
+    [messages, selectedSession?.revert?.messageID],
+  );
+  const latestUserMessageTarget = useMemo(() => getLatestUserMessageTarget(visibleMessages), [visibleMessages]);
   const isSessionStalled = Boolean(
     isSessionBusy &&
       selectedActivity?.busySince &&
@@ -386,21 +249,29 @@ function App() {
     const sorted = [...sessionList].sort(
       (left, right) => (right.time?.updated || 0) - (left.time?.updated || 0),
     );
-    setSessions((current) => {
-      const merged = [...current];
+    const validSessionIds = new Set(sorted.map((session) => session.id));
 
-      for (const session of sorted) {
-        const existingIndex = merged.findIndex((item) => item.id === session.id);
-        if (existingIndex >= 0) {
-          merged[existingIndex] = { ...merged[existingIndex], ...session };
-        } else {
-          merged.push(session);
-        }
-      }
-
-      return [...merged].sort((left, right) => (right.time?.updated || 0) - (left.time?.updated || 0));
-    });
+    setSessions(sorted);
     setStatusMap(nextStatusMap);
+    setMessagesBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setMessagesNextCursorBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setDiffCountBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setPermissionRequestsBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setQuestionRequestsBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setSessionActivity((current) => pruneSessionRecord(current, validSessionIds));
+    setLastSentDraftBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setQueuedMessagesBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setInFlightSessions((current) => pruneSessionRecord(current, validSessionIds));
+    setAwaitingSessionCompletionBySession((current) => pruneSessionRecord(current, validSessionIds));
+
+    messageRequestSeqRef.current = pruneSessionRecord(messageRequestSeqRef.current, validSessionIds);
+    diffRequestSeqRef.current = pruneSessionRecord(diffRequestSeqRef.current, validSessionIds);
+    questionsRequestSeqRef.current = pruneSessionRecord(questionsRequestSeqRef.current, validSessionIds);
+    permissionsRequestSeqRef.current = pruneSessionRecord(permissionsRequestSeqRef.current, validSessionIds);
+    inFlightSessionsRef.current = new Set(
+      [...inFlightSessionsRef.current].filter((sessionId) => validSessionIds.has(sessionId)),
+    );
+
     setSelectedSessionId((current) => {
       if (current && sorted.some((session) => session.id === current)) {
         return current;
@@ -410,12 +281,7 @@ function App() {
   }, [config]);
 
   const resetSelectedSessionState = useCallback(() => {
-    setMessages([]);
-    setMessagesNextCursor(null);
     setIsLoadingOlderMessages(false);
-    setDiffCount(0);
-    setPermissionRequests([]);
-    setQuestionRequests([]);
   }, []);
 
   const handleSessionSelect = useCallback((sessionId: string) => {
@@ -424,29 +290,43 @@ function App() {
     setSelectedSessionId(sessionId);
   }, [resetSelectedSessionState]);
 
-  const refreshMessages = useCallback(async (options?: { before?: string; appendOlder?: boolean; limit?: number }) => {
+  useEffect(() => {
     if (!selectedSessionId) return;
 
-    const sessionId = selectedSessionId;
+    const failedDraft = lastSentDraftBySession[selectedSessionId];
+    const sessionMessages = messagesBySession[selectedSessionId] || [];
+    if (!shouldRestoreFailedDraft(failedDraft, sessionMessages, draft)) return;
+
+    setDraft((current) => (current.trim() ? current : failedDraft.text));
+  }, [draft, lastSentDraftBySession, messagesBySession, selectedSessionId]);
+
+  const refreshMessages = useCallback(async (options?: { sessionId?: string; before?: string; appendOlder?: boolean; limit?: number }) => {
+    const sessionId = options?.sessionId ?? selectedSessionIdRef.current;
+    if (!sessionId) return;
+
+    const kind: MessageRequestKind = options?.appendOlder ? "older" : "latest";
+    const nextSeq = nextSessionMessageRequestSeq(messageRequestSeqRef.current, sessionId, kind);
+    messageRequestSeqRef.current = nextSeq.nextState;
+    const requestSeq = nextSeq.requestSeq;
 
     const page: MessagePage = await opencodeApi.listMessages(config, sessionId, {
       limit: options?.limit ?? INITIAL_MESSAGE_PAGE_SIZE,
       before: options?.before,
     });
 
-    if (selectedSessionIdRef.current !== sessionId) {
+    if (!isLatestSessionMessageRequest(messageRequestSeqRef.current, sessionId, kind, requestSeq)) {
       return;
     }
 
     const mapped = page.items.map(mapMessageEnvelope);
-    setMessagesNextCursor(page.nextCursor);
-    setMessages((current) => {
-      if (options?.appendOlder) {
-        return mergeMessages(current, [...mapped, ...current]);
-      }
-      return mergeMessages(current, mapped);
-    });
-  }, [config, selectedSessionId]);
+    setMessagesBySession((current) => ({
+      ...current,
+      [sessionId]: options?.appendOlder
+        ? prependOlderMessages(current[sessionId] || [], mapped)
+        : upsertMessagesById(current[sessionId] || [], mapped),
+    }));
+    setMessagesNextCursorBySession((current) => setSessionCursor(current, sessionId, page.nextCursor));
+  }, [config]);
 
   const handleLoadOlderMessages = useCallback(async () => {
     if (!selectedSessionId || !messagesNextCursor || isLoadingOlderMessages) return;
@@ -463,37 +343,87 @@ function App() {
     }
   }, [isLoadingOlderMessages, messagesNextCursor, refreshMessages, selectedSessionId]);
 
-  const refreshDiff = useCallback(async () => {
-    if (!selectedSessionId) return;
-    const diff = await opencodeApi.getDiff(config, selectedSessionId);
-    setDiffCount(diff.length);
-  }, [config, selectedSessionId]);
+  const refreshDiff = useCallback(async (sessionId = selectedSessionIdRef.current) => {
+    if (!sessionId) return;
 
-  const refreshQuestions = useCallback(async () => {
-    if (!selectedSessionId) return;
+    const nextSeq = nextSessionRequestSeq(diffRequestSeqRef.current, sessionId);
+    diffRequestSeqRef.current = nextSeq.nextState;
+    const requestSeq = nextSeq.requestSeq;
+
+    const diff = await opencodeApi.getDiff(config, sessionId);
+    if (!isLatestSessionRequest(diffRequestSeqRef.current, sessionId, requestSeq)) return;
+    setDiffCountBySession((current) => ({ ...current, [sessionId]: diff.length }));
+  }, [config]);
+
+  const refreshQuestions = useCallback(async (sessionId = selectedSessionIdRef.current) => {
+    if (!sessionId) return;
+    const requestSeq = (questionsRequestSeqRef.current[sessionId] || 0) + 1;
+    questionsRequestSeqRef.current = { ...questionsRequestSeqRef.current, [sessionId]: requestSeq };
     const requests = await opencodeApi.listQuestions(config);
-    setQuestionRequests(requests.filter((item) => item.sessionID === selectedSessionId));
-  }, [config, selectedSessionId]);
+    if (requestSeq !== questionsRequestSeqRef.current[sessionId]) return;
+    setQuestionRequestsBySession((current) => ({
+      ...current,
+      [sessionId]: requests.filter((item) => item.sessionID === sessionId),
+    }));
+  }, [config]);
 
-  const refreshPermissions = useCallback(async () => {
-    if (!selectedSessionId) return;
+  const refreshPermissions = useCallback(async (sessionId = selectedSessionIdRef.current) => {
+    if (!sessionId) return;
+    const requestSeq = (permissionsRequestSeqRef.current[sessionId] || 0) + 1;
+    permissionsRequestSeqRef.current = { ...permissionsRequestSeqRef.current, [sessionId]: requestSeq };
     const requests = await opencodeApi.listPermissions(config);
-    setPermissionRequests(requests.filter((item) => item.sessionID === selectedSessionId));
-  }, [config, selectedSessionId]);
+    if (requestSeq !== permissionsRequestSeqRef.current[sessionId]) return;
+    setPermissionRequestsBySession((current) => ({
+      ...current,
+      [sessionId]: requests.filter((item) => item.sessionID === sessionId),
+    }));
+  }, [config]);
+
+  const refreshSessionData = useCallback(
+    async (sessionId = selectedSessionIdRef.current) => {
+      if (!sessionId) return;
+      await Promise.all([
+        refreshMessages({ sessionId }),
+        refreshDiff(sessionId),
+        refreshPermissions(sessionId),
+        refreshQuestions(sessionId),
+      ]);
+    },
+    [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions],
+  );
 
   const refreshRemoteConfig = useCallback(async (targetConfig: ServerConfig = config) => {
+    const requestSeq = ++remoteConfigRequestSeqRef.current;
     if (!targetConfig.password) {
-      setConfig((current) => ({ ...current, model: "" }));
+      const nextConfig = { ...targetConfig, model: "" };
+      setConfig((current) => nextConfig.baseUrl === current.baseUrl ? { ...current, model: "" } : current);
+      saveServerConfig(nextConfig);
       return null;
     }
 
     const remoteConfig = await opencodeApi.getGlobalConfig(targetConfig);
     const nextModel = typeof remoteConfig.model === "string" ? remoteConfig.model : "";
-    setConfig((current) => ({ ...current, model: nextModel }));
+    setConfig((current) => {
+      if (requestSeq !== remoteConfigRequestSeqRef.current) return current;
+      if (
+        current.baseUrl !== targetConfig.baseUrl ||
+        current.username !== targetConfig.username ||
+        current.password !== targetConfig.password
+      ) {
+        return current;
+      }
+      if (current.model !== targetConfig.model) {
+        return current;
+      }
+      const nextConfig = { ...current, model: nextModel };
+      saveServerConfig(nextConfig);
+      return nextConfig;
+    });
     return remoteConfig;
   }, [config]);
 
   const refreshModelProviders = useCallback(async (targetConfig: ServerConfig = config) => {
+    const requestSeq = ++modelProvidersRequestSeqRef.current;
     if (!targetConfig.password) {
       setModelProviders([]);
       setProviderDefaults({});
@@ -505,16 +435,20 @@ function App() {
 
     try {
       const response = await opencodeApi.listConfigProviders(targetConfig);
+      if (requestSeq !== modelProvidersRequestSeqRef.current) return;
       setModelProviders(response.providers);
       setProviderDefaults(response.default);
       setModelError(null);
     } catch (error) {
+      if (requestSeq !== modelProvidersRequestSeqRef.current) return;
       const message = error instanceof Error ? error.message : "failed to load models";
       setModelProviders([]);
       setProviderDefaults({});
       setModelError(`模型列表加载失败: ${message}`);
     } finally {
-      setIsLoadingModels(false);
+      if (requestSeq === modelProvidersRequestSeqRef.current) {
+        setIsLoadingModels(false);
+      }
     }
   }, [config]);
 
@@ -568,12 +502,13 @@ function App() {
     setIsRefreshingSession(true);
     try {
       await refreshSessions();
-      if (!selectedSessionId) return;
-      await Promise.all([refreshMessages(), refreshDiff(), refreshQuestions(), refreshPermissions()]);
+      const sessionId = selectedSessionIdRef.current;
+      if (!sessionId) return;
+      await refreshSessionData(sessionId);
     } finally {
       setIsRefreshingSession(false);
     }
-  }, [isRefreshingSession, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
+  }, [isRefreshingSession, refreshSessionData, refreshSessions]);
 
   const handleConnect = useCallback(async () => {
     const normalized = {
@@ -593,6 +528,7 @@ function App() {
 
     try {
       const health = await opencodeApi.health(normalized);
+      healthFailureCountRef.current = 0;
       setConfig((current) => ({ ...current, ...normalized }));
       saveServerConfig(normalized);
       setConnectionState("success");
@@ -625,37 +561,70 @@ function App() {
 
   const handleConfigChange = useCallback((next: ServerConfig) => {
     setConfig(next);
+    saveServerConfig(next);
   }, []);
 
   const handleModelChange = useCallback(
     async (model: string) => {
-      if (!model || model === config.model) return;
+      if (!model || model === configRef.current.model) return;
 
-      const previousModel = config.model;
-      setConfig((current) => ({ ...current, model }));
+      const requestConfig = { ...configRef.current };
+      const previousModel = requestConfig.model;
+      setConfig((current) => {
+        const nextConfig = { ...current, model };
+        saveServerConfig(nextConfig);
+        return nextConfig;
+      });
 
       try {
-        const nextRemoteConfig = await opencodeApi.updateGlobalConfig(config, { model });
+        const nextRemoteConfig = await opencodeApi.updateGlobalConfig(requestConfig, { model });
 
-        setConfig((current) => ({
-          ...current,
-          model: typeof nextRemoteConfig.model === "string" ? nextRemoteConfig.model : model,
-        }));
+        setConfig((current) => {
+          if (
+            current.baseUrl !== requestConfig.baseUrl ||
+            current.username !== requestConfig.username ||
+            current.password !== requestConfig.password
+          ) {
+            return current;
+          }
+          const nextConfig = {
+            ...current,
+            model: typeof nextRemoteConfig.model === "string" ? nextRemoteConfig.model : model,
+          };
+          saveServerConfig(nextConfig);
+          return nextConfig;
+        });
         setEvents((current) => [`Default model updated - ${model}`, ...current].slice(0, 20));
       } catch (error) {
         const message = error instanceof Error ? error.message : "model update failed";
-        setConfig((current) => ({ ...current, model: previousModel }));
+        setConfig((current) => {
+          if (current.model !== model) return current;
+          const nextConfig = { ...current, model: previousModel };
+          saveServerConfig(nextConfig);
+          return nextConfig;
+        });
         setEvents((current) => [`Default model update failed - ${message}`, ...current].slice(0, 20));
       }
     },
-    [config],
+    [],
   );
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!selectedSessionId || !text) return;
+    if (shouldBlockDuplicateSend(sendSubmissionGuard, selectedSessionId, text)) return;
 
     const now = Date.now();
+    const revertMessageId = selectedSession?.revert?.messageID;
+
+    setIsSending(true);
+
+    try {
+      if (revertMessageId) {
+        const restoredSession = await opencodeApi.unrevertSession(config, selectedSessionId);
+        setSessions((current) => upsertSession(current, restoredSession));
+      }
+
     const optimisticMessageId = `local-${now}`;
     const queueItem: QueuedMessage = {
       id: `queue-${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -672,8 +641,11 @@ function App() {
       role: "user",
       parts: [{ type: "text", text }],
       timestampLabel: formatTimestamp(),
+      createdAt: now,
       isPending: true,
     };
+
+    setSendSubmissionGuard({ sessionId: selectedSessionId, text });
 
     setQueuedMessagesBySession((current) => ({
       ...current,
@@ -687,14 +659,28 @@ function App() {
         model: selectedModel,
       },
     }));
-    setMessages((current) => [...current, optimisticMessage]);
+    setMessagesBySession((current) => ({
+      ...current,
+      [selectedSessionId]: [...getVisibleMessages(current[selectedSessionId] || [], revertMessageId), optimisticMessage],
+    }));
     setDraft("");
     setEvents((current) => {
       const queueSize = queuedCount + 1;
       const label = queueSize > 1 ? `Queued message ${queueSize} for session` : "Queued message for session";
       return [label, ...current].slice(0, 20);
     });
-  }, [draft, queuedCount, selectedAgent, selectedModel, selectedSessionId]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "send preparation failed";
+      setEvents((current) => [`Send failed - ${message}`, ...current].slice(0, 20));
+    } finally {
+      setIsSending(false);
+    }
+  }, [config, draft, queuedCount, selectedAgent, selectedModel, selectedSession, selectedSessionId, sendSubmissionGuard]);
+
+  useEffect(() => {
+    if (!shouldClearSendSubmissionGuard(sendSubmissionGuard, selectedSessionId, draft)) return;
+    setSendSubmissionGuard(null);
+  }, [draft, selectedSessionId, sendSubmissionGuard]);
 
   const handleUndoLastMessage = useCallback(async () => {
     if (!selectedSessionId || !latestUserMessageTarget || undoingSessionId === selectedSessionId) return;
@@ -704,22 +690,21 @@ function App() {
     try {
       if (selectedSessionStatus && selectedSessionStatus !== "idle") {
         await opencodeApi.abortSession(config, selectedSessionId);
-        setAwaitingSessionCompletion(null);
-        setDispatchingMessage(null);
+        setAwaitingSessionCompletionBySession((current) => removeSessionKey(current, selectedSessionId));
         setEvents((current) => [`Abort requested before undo - ${selectedSessionId}`, ...current].slice(0, 20));
       }
 
       await opencodeApi.revertSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
       setDraft(latestUserMessageTarget.text);
       setEvents((current) => [`Undid last message - ${selectedSessionId}`, ...current].slice(0, 20));
-      await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+      await Promise.all([refreshSessions(), refreshSessionData(selectedSessionId)]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "undo failed";
       setEvents((current) => [`Undo failed - ${message}`, ...current].slice(0, 20));
     } finally {
       setUndoingSessionId((current) => (current === selectedSessionId ? null : current));
     }
-  }, [config, latestUserMessageTarget, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId, selectedSessionStatus, undoingSessionId]);
+  }, [config, latestUserMessageTarget, refreshSessionData, refreshSessions, selectedSessionId, selectedSessionStatus, undoingSessionId]);
 
   const handleForkLastMessage = useCallback(async () => {
     if (!selectedSessionId || !latestUserMessageTarget || forkingSessionId === selectedSessionId) return;
@@ -752,14 +737,14 @@ function App() {
       await opencodeApi.unrevertSession(config, selectedSessionId);
       setDraft("");
       setEvents((current) => [`Redid reverted messages - ${selectedSessionId}`, ...current].slice(0, 20));
-      await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+      await Promise.all([refreshSessions(), refreshSessionData(selectedSessionId)]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "redo failed";
       setEvents((current) => [`Redo failed - ${message}`, ...current].slice(0, 20));
     } finally {
       setRedoingSessionId((current) => (current === selectedSessionId ? null : current));
     }
-  }, [config, redoingSessionId, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSession, selectedSessionId]);
+  }, [config, redoingSessionId, refreshSessionData, refreshSessions, selectedSession, selectedSessionId]);
 
   const handleCompactContext = useCallback(async () => {
     if (!selectedSessionId || runningCommandName) return;
@@ -780,20 +765,20 @@ function App() {
         modelID: targetModel.modelID,
       });
 
-      setAwaitingSessionCompletion({
-        sessionId: selectedSessionId,
-        seenBusy: false,
-        startedAt: Date.now(),
-      });
+      setAwaitingSessionCompletionBySession((current) => ({
+        ...current,
+        [selectedSessionId]: {
+          sessionId: selectedSessionId,
+          seenBusy: false,
+          startedAt: Date.now(),
+        },
+      }));
 
-      await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+      await Promise.all([refreshSessions(), refreshSessionData(selectedSessionId)]);
 
       window.setTimeout(() => {
         void refreshSessions();
-        void refreshMessages();
-        void refreshDiff();
-        void refreshPermissions();
-        void refreshQuestions();
+        void refreshSessionData(selectedSessionId);
       }, 1200);
     } catch (error) {
       const message = error instanceof Error ? error.message : "compact failed";
@@ -802,7 +787,7 @@ function App() {
       setRunningCommandName(null);
       setIsSending(false);
     }
-  }, [config, modelProviders, providerDefaults, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, runningCommandName, selectedModel, selectedSessionId]);
+  }, [config, modelProviders, providerDefaults, refreshSessionData, refreshSessions, runningCommandName, selectedModel, selectedSessionId]);
 
   const handleRunCommand = useCallback(
     async (commandName: string, argumentsText: string) => {
@@ -820,20 +805,20 @@ function App() {
           model: selectedModel || undefined,
         });
 
-        setAwaitingSessionCompletion({
-          sessionId: selectedSessionId,
-          seenBusy: false,
-          startedAt: Date.now(),
-        });
+        setAwaitingSessionCompletionBySession((current) => ({
+          ...current,
+          [selectedSessionId]: {
+            sessionId: selectedSessionId,
+            seenBusy: false,
+            startedAt: Date.now(),
+          },
+        }));
 
-        await Promise.all([refreshSessions(), refreshMessages(), refreshDiff(), refreshPermissions(), refreshQuestions()]);
+        await Promise.all([refreshSessions(), refreshSessionData(selectedSessionId)]);
 
         window.setTimeout(() => {
           void refreshSessions();
-          void refreshMessages();
-          void refreshDiff();
-          void refreshPermissions();
-          void refreshQuestions();
+          void refreshSessionData(selectedSessionId);
         }, 1200);
       } catch (error) {
         const message = error instanceof Error ? error.message : "command failed";
@@ -843,33 +828,33 @@ function App() {
         setIsSending(false);
       }
     },
-    [
-      config,
-      refreshDiff,
-      refreshMessages,
-      refreshPermissions,
-      refreshQuestions,
-      refreshSessions,
-      runningCommandName,
-      selectedAgent,
-      selectedModel,
-      selectedSessionId,
-    ],
+    [config, refreshSessionData, refreshSessions, runningCommandName, selectedAgent, selectedModel, selectedSessionId],
   );
 
   const dispatchQueuedMessage = useCallback(
     async (item: QueuedMessage) => {
-      setDispatchingMessage(item);
-      setIsSending(item.sessionId === selectedSessionId);
+      inFlightSessionsRef.current.add(item.sessionId);
+      setInFlightSessions((current) => ({ ...current, [item.sessionId]: true }));
+      setIsSending(item.sessionId === selectedSessionIdRef.current);
 
       try {
         const requestModel = item.model ? splitProviderModel(item.model) || undefined : undefined;
 
-        await opencodeApi.sendMessage(config, item.sessionId, {
+        const sentMessage = await opencodeApi.sendMessage(config, item.sessionId, {
           agent: item.agent,
           model: requestModel,
           parts: [{ type: "text", text: item.text }],
         });
+
+        setMessagesBySession((current) => ({
+          ...current,
+          [item.sessionId]: confirmOptimisticMessage(
+            current[item.sessionId] || [],
+            item.optimisticMessageId,
+            mapMessageEnvelope(sentMessage),
+          ),
+        }));
+        setLastSentDraftBySession((current) => removeSessionKey(current, item.sessionId));
 
         setQueuedMessagesBySession((current) => {
           const sessionQueue = current[item.sessionId] || [];
@@ -882,18 +867,11 @@ function App() {
 
           return { ...current, [item.sessionId]: nextSessionQueue };
         });
-        setAwaitingSessionCompletion({
-          sessionId: item.sessionId,
-          seenBusy: false,
-          startedAt: Date.now(),
-        });
         setEvents((current) => [`Sent queued message - ${item.agent}`, ...current].slice(0, 20));
 
         void refreshSessions();
-        if (item.sessionId === selectedSessionId) {
-          void refreshMessages();
-          void refreshDiff();
-        }
+        void refreshMessages({ sessionId: item.sessionId });
+        void refreshDiff(item.sessionId);
       } catch (error) {
         setQueuedMessagesBySession((current) => {
           const sessionQueue = current[item.sessionId] || [];
@@ -906,66 +884,97 @@ function App() {
 
           return { ...current, [item.sessionId]: nextSessionQueue };
         });
-        if (item.sessionId === selectedSessionId) {
-          setMessages((current) => current.filter((message) => message.id !== item.optimisticMessageId));
-        }
         const message = error instanceof Error ? error.message : "send failed";
+        setMessagesBySession((current) => ({
+          ...current,
+          [item.sessionId]: markMessageDeliveryFailed(
+            current[item.sessionId] || [],
+            item.optimisticMessageId,
+            `Failed to send: ${message}. You can edit and resend.`,
+          ),
+        }));
+        setLastSentDraftBySession((current) => ({
+          ...current,
+          [item.sessionId]: {
+            text: item.text,
+            agent: item.agent,
+            model: item.model,
+          },
+        }));
+        if (item.sessionId === selectedSessionIdRef.current) {
+          setDraft((current) => (current.trim() ? current : item.text));
+        }
         setEvents((current) => [`Queued send failed - ${message}`, ...current].slice(0, 20));
       } finally {
-        setDispatchingMessage((current) => (current?.id === item.id ? null : current));
-        if (item.sessionId === selectedSessionId) {
+        inFlightSessionsRef.current.delete(item.sessionId);
+        setInFlightSessions((current) => removeSessionKey(current, item.sessionId));
+        if (item.sessionId === selectedSessionIdRef.current) {
           setIsSending(false);
         }
       }
     },
-    [config, refreshDiff, refreshMessages, refreshSessions, selectedSessionId],
+    [config, refreshDiff, refreshMessages, refreshSessions],
   );
 
   useEffect(() => {
-    if (dispatchingMessage || awaitingSessionCompletion) return;
-
-    const nextMessage = Object.values(queuedMessagesBySession)
+    const nextMessages = Object.values(queuedMessagesBySession)
       .map((queue) => queue[0])
       .filter((message): message is QueuedMessage => Boolean(message))
-      .filter((message) => statusMap[message.sessionId] !== "busy")
-      .sort((left, right) => left.createdAt - right.createdAt)[0];
+      .filter((message) => !inFlightSessions[message.sessionId])
+      .sort((left, right) => left.createdAt - right.createdAt);
 
-    if (!nextMessage) return;
+    if (nextMessages.length === 0) return;
 
-    void dispatchQueuedMessage(nextMessage);
-  }, [awaitingSessionCompletion, dispatchQueuedMessage, dispatchingMessage, queuedMessagesBySession, statusMap]);
+    for (const nextMessage of nextMessages) {
+      if (inFlightSessionsRef.current.has(nextMessage.sessionId)) continue;
+      void dispatchQueuedMessage(nextMessage);
+    }
+  }, [dispatchQueuedMessage, inFlightSessions, queuedMessagesBySession]);
 
   useEffect(() => {
-    if (!awaitingSessionCompletion) return;
+    const awaitingEntries = Object.values(awaitingSessionCompletionBySession);
+    if (awaitingEntries.length === 0) return;
 
-    const nextStatus = statusMap[awaitingSessionCompletion.sessionId];
-    if (nextStatus === "busy" && !awaitingSessionCompletion.seenBusy) {
-      setAwaitingSessionCompletion({
-        sessionId: awaitingSessionCompletion.sessionId,
-        seenBusy: true,
-        startedAt: awaitingSessionCompletion.startedAt,
-      });
-      return;
-    }
+    for (const awaiting of awaitingEntries) {
+      const nextStatus = statusMap[awaiting.sessionId];
+      if (nextStatus === "busy" && !awaiting.seenBusy) {
+        setAwaitingSessionCompletionBySession((current) => ({
+          ...current,
+          [awaiting.sessionId]: {
+            sessionId: awaiting.sessionId,
+            seenBusy: true,
+            startedAt: awaiting.startedAt,
+          },
+        }));
+        continue;
+      }
 
-    if (awaitingSessionCompletion.seenBusy && nextStatus && nextStatus !== "busy") {
-      setAwaitingSessionCompletion(null);
+      if (awaiting.seenBusy && nextStatus === "idle") {
+        setAwaitingSessionCompletionBySession((current) => removeSessionKey(current, awaiting.sessionId));
+      }
     }
-  }, [awaitingSessionCompletion, statusMap]);
+  }, [awaitingSessionCompletionBySession, statusMap]);
 
   useEffect(() => {
-    if (!awaitingSessionCompletion || awaitingSessionCompletion.seenBusy) return;
+    const timeouts = Object.values(awaitingSessionCompletionBySession)
+      .filter((awaiting) => !awaiting.seenBusy)
+      .map((awaiting) =>
+        window.setTimeout(() => {
+          setAwaitingSessionCompletionBySession((current) => {
+            const existing = current[awaiting.sessionId];
+            if (!existing || existing.seenBusy) return current;
+            if (existing.startedAt !== awaiting.startedAt) return current;
+            return removeSessionKey(current, awaiting.sessionId);
+          });
+        }, 15000),
+      );
 
-    const timeout = window.setTimeout(() => {
-      setAwaitingSessionCompletion((current) => {
-        if (!current || current.seenBusy) return current;
-        if (current.startedAt !== awaitingSessionCompletion.startedAt) return current;
-        return null;
-      });
-    }, 2000);
-
-    return () => window.clearTimeout(timeout);
-  }, [awaitingSessionCompletion]);
+    return () => {
+      for (const timeout of timeouts) {
+        window.clearTimeout(timeout);
+      }
+    };
+  }, [awaitingSessionCompletionBySession]);
 
   const handlePermissionAction = useCallback(
     async (id: string, action: "once" | "always" | "reject") => {
@@ -973,8 +982,14 @@ function App() {
 
       try {
         await opencodeApi.replyPermission(config, id, action);
-        setPermissionRequests((current) => removePermissionRequest(current, id));
-        await Promise.all([refreshMessages(), refreshSessions(), refreshDiff(), refreshPermissions()]);
+        const targetSessionId = findPermissionSessionId(permissionRequestsBySessionRef.current, id);
+        if (targetSessionId) {
+          setPermissionRequestsBySession((current) => ({
+            ...current,
+            [targetSessionId]: removePermissionRequest(current[targetSessionId] || [], id),
+          }));
+        }
+        await Promise.all([refreshSessions(), refreshSessionData(targetSessionId)]);
       } catch (error) {
         const message = error instanceof Error ? error.message : "permission response failed";
         setEvents((current) => [`Permission action failed - ${message}`, ...current].slice(0, 20));
@@ -982,25 +997,53 @@ function App() {
         setRespondingPermissionId((current) => (current === id ? null : current));
       }
     },
-    [config, refreshDiff, refreshMessages, refreshPermissions, refreshSessions],
+    [config, refreshSessionData, refreshSessions],
   );
 
   const handleQuestionReply = useCallback(
-    async (id: string, answers: string[][]) => {
-      await opencodeApi.replyQuestion(config, id, answers);
-      setQuestionRequests((current) => removeQuestionRequest(current, id));
-      await Promise.all([refreshMessages(), refreshSessions(), refreshDiff(), refreshQuestions()]);
+    async (id: string, answers: string[][]): Promise<QuestionActionResult> => {
+      const targetSessionId = findQuestionSessionId(questionRequestsBySessionRef.current, id);
+
+      try {
+        await opencodeApi.replyQuestion(config, id, answers);
+        if (targetSessionId) {
+          setQuestionRequestsBySession((current) => ({
+            ...current,
+            [targetSessionId]: removeQuestionRequest(current[targetSessionId] || [], id),
+          }));
+        }
+        await Promise.all([refreshSessions(), refreshSessionData(targetSessionId)]);
+        return { ok: true };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "question reply failed";
+        setEvents((current) => [`Question reply failed - ${message}`, ...current].slice(0, 20));
+        return { ok: false, error: message };
+      }
     },
-    [config, refreshDiff, refreshMessages, refreshQuestions, refreshSessions],
+    [config, refreshSessionData, refreshSessions],
   );
 
   const handleQuestionReject = useCallback(
-    async (id: string) => {
-      await opencodeApi.rejectQuestion(config, id);
-      setQuestionRequests((current) => removeQuestionRequest(current, id));
-      await Promise.all([refreshMessages(), refreshSessions(), refreshDiff(), refreshQuestions()]);
+    async (id: string): Promise<QuestionActionResult> => {
+      const targetSessionId = findQuestionSessionId(questionRequestsBySessionRef.current, id);
+
+      try {
+        await opencodeApi.rejectQuestion(config, id);
+        if (targetSessionId) {
+          setQuestionRequestsBySession((current) => ({
+            ...current,
+            [targetSessionId]: removeQuestionRequest(current[targetSessionId] || [], id),
+          }));
+        }
+        await Promise.all([refreshSessions(), refreshSessionData(targetSessionId)]);
+        return { ok: true };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "question reject failed";
+        setEvents((current) => [`Question reject failed - ${message}`, ...current].slice(0, 20));
+        return { ok: false, error: message };
+      }
     },
-    [config, refreshDiff, refreshMessages, refreshQuestions, refreshSessions],
+    [config, refreshSessionData, refreshSessions],
   );
 
   useEffect(() => {
@@ -1014,11 +1057,8 @@ function App() {
       return;
     }
 
-    void refreshMessages();
-    void refreshDiff();
-    void refreshPermissions();
-    void refreshQuestions();
-  }, [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, resetSelectedSessionState, selectedSessionId]);
+    void refreshSessionData(selectedSessionId);
+  }, [refreshSessionData, resetSelectedSessionState, selectedSessionId]);
 
   useEffect(() => {
     if (connectionState !== "success") return;
@@ -1041,12 +1081,16 @@ function App() {
   }, [connectionState, refreshSkills]);
 
   useEffect(() => {
-    if (!config.model) return;
+    if (!config.model || modelProviders.length === 0) return;
 
     const normalizedModel = normalizeModelValue(config.model, modelProviders);
     if (normalizedModel === config.model) return;
 
-    setConfig((current) => ({ ...current, model: normalizedModel }));
+    setConfig((current) => {
+      const nextConfig = { ...current, model: normalizedModel };
+      saveServerConfig(nextConfig);
+      return nextConfig;
+    });
   }, [config.model, modelProviders]);
 
   useEffect(() => {
@@ -1062,18 +1106,18 @@ function App() {
       }
     };
 
-    const scheduleRefresh = () => {
-      if (refreshTimeoutRef.current) {
-        window.clearTimeout(refreshTimeoutRef.current);
+    const scheduleRefresh = (sessionId?: string) => {
+      const refreshKey = sessionId || "__sessions__";
+      const existingTimeout = refreshTimeoutsRef.current[refreshKey];
+      if (existingTimeout) {
+        window.clearTimeout(existingTimeout);
       }
 
-      refreshTimeoutRef.current = window.setTimeout(() => {
+      refreshTimeoutsRef.current[refreshKey] = window.setTimeout(() => {
+        delete refreshTimeoutsRef.current[refreshKey];
         void refreshSessions();
-        if (selectedSessionId) {
-          void refreshMessages();
-          void refreshDiff();
-          void refreshPermissions();
-          void refreshQuestions();
+        if (sessionId) {
+          void refreshSessionData(sessionId);
         }
       }, 250);
     };
@@ -1083,6 +1127,7 @@ function App() {
         .streamEvents(
           config,
           (event) => {
+            reconnectAttemptRef.current = 0;
             const payload =
               event.data && typeof event.data === "object" && "type" in (event.data as Record<string, unknown>)
                 ? (event.data as { type?: string; properties?: Record<string, unknown> })
@@ -1091,22 +1136,30 @@ function App() {
             const payloadType = payload?.type || event.type;
             const properties = payload?.properties || {};
 
+            if (payloadType === "server.connected" || payloadType === "server.heartbeat") {
+              return;
+            }
+
             if (payloadType === "message.updated") {
               const info = properties.info as MessageEnvelope["info"] | undefined;
-              if (info?.sessionID === selectedSessionId) {
-                setMessages((current) => reconcilePending(upsertMessageInfo(current, info)));
-              }
               if (info?.sessionID) {
-                setSessionActivity((current) => markSessionActivity(current, info.sessionID as string));
+                const sessionID = info.sessionID;
+                setMessagesBySession((current) => ({
+                  ...current,
+                  [sessionID]: upsertMessageInfo(current[sessionID] || [], info),
+                }));
+                setSessionActivity((current) => markSessionActivity(current, sessionID));
               }
             }
 
             if (payloadType === "message.part.updated") {
               const part = properties.part as Record<string, unknown> | undefined;
-              if (part?.sessionID === selectedSessionId) {
-                setMessages((current) =>
-                  reconcilePending(upsertMessagePart(current, part as { messageID?: string; id?: string; type?: string; text?: string })),
-                );
+              if (part?.sessionID) {
+                const sessionID = part.sessionID as string;
+                setMessagesBySession((current) => ({
+                  ...current,
+                  [sessionID]: upsertMessagePart(current[sessionID] || [], part as { messageID?: string; id?: string; type?: string; text?: string }),
+                }));
               }
               const partSessionID = typeof part?.sessionID === "string" ? part.sessionID : undefined;
               if (partSessionID) {
@@ -1116,15 +1169,16 @@ function App() {
 
             if (payloadType === "message.part.delta") {
               const sessionID = properties.sessionID as string | undefined;
-              if (sessionID === selectedSessionId) {
-                setMessages((current) =>
-                  appendMessageDelta(current, {
+              if (sessionID) {
+                setMessagesBySession((current) => ({
+                  ...current,
+                  [sessionID]: appendMessageDelta(current[sessionID] || [], {
                     messageID: properties.messageID as string | undefined,
                     partID: properties.partID as string | undefined,
                     field: properties.field as string | undefined,
                     delta: properties.delta as string | undefined,
                   }),
-                );
+                }));
               }
               if (sessionID) {
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
@@ -1140,55 +1194,65 @@ function App() {
 
             if (payloadType === "question.asked") {
               const request = properties as QuestionRequest;
-              if (request.sessionID === selectedSessionId) {
-                setQuestionRequests((current) => upsertQuestionRequest(current, request));
-              }
               if (request.sessionID) {
+                setQuestionRequestsBySession((current) => ({
+                  ...current,
+                  [request.sessionID]: upsertQuestionRequest(current[request.sessionID] || [], request),
+                }));
                 setSessionActivity((current) => markSessionActivity(current, request.sessionID));
               }
-              scheduleRefresh();
+              scheduleRefresh(request.sessionID);
             }
 
             if (payloadType === "permission.asked") {
               const request = properties as PermissionRequest;
-              if (request.sessionID === selectedSessionId) {
-                setPermissionRequests((current) => upsertPermissionRequest(current, request));
-              }
               if (request.sessionID) {
+                setPermissionRequestsBySession((current) => ({
+                  ...current,
+                  [request.sessionID]: upsertPermissionRequest(current[request.sessionID] || [], request),
+                }));
                 setSessionActivity((current) => markSessionActivity(current, request.sessionID));
               }
-              scheduleRefresh();
+              scheduleRefresh(request.sessionID);
             }
 
             if (payloadType === "permission.replied") {
               const sessionID = properties.sessionID as string | undefined;
               const requestID = properties.requestID as string | undefined;
-              if (sessionID === selectedSessionId && requestID) {
-                setPermissionRequests((current) => removePermissionRequest(current, requestID));
+              if (sessionID && requestID) {
+                setPermissionRequestsBySession((current) => ({
+                  ...current,
+                  [sessionID]: removePermissionRequest(current[sessionID] || [], requestID),
+                }));
               }
               if (sessionID) {
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
               }
-              scheduleRefresh();
+              scheduleRefresh(sessionID);
             }
 
             if (payloadType === "question.replied" || payloadType === "question.rejected") {
               const sessionID = properties.sessionID as string | undefined;
               const requestID = properties.requestID as string | undefined;
-              if (sessionID === selectedSessionId && requestID) {
-                setQuestionRequests((current) => removeQuestionRequest(current, requestID));
+              if (sessionID && requestID) {
+                setQuestionRequestsBySession((current) => ({
+                  ...current,
+                  [sessionID]: removeQuestionRequest(current[sessionID] || [], requestID),
+                }));
               }
               if (sessionID) {
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
               }
-              scheduleRefresh();
+              scheduleRefresh(sessionID);
             }
 
             if (payloadType === "session.status") {
               const sessionID = properties.sessionID as string | undefined;
-              const status = properties.status as { type?: string; message?: string } | undefined;
-              if (sessionID && status?.type) {
-                const nextStatus = status.type;
+              const status = properties.status as { type?: string; message?: string } | string | undefined;
+              const nextStatus = normalizeSessionStatus(status);
+              const statusMessage =
+                status && typeof status === "object" && "message" in status ? (status as { message?: string }).message : undefined;
+              if (sessionID) {
                 setStatusMap((current) => ({ ...current, [sessionID]: nextStatus }));
                 setSessionActivity((current) => {
                   const existing = current[sessionID] || {};
@@ -1210,25 +1274,52 @@ function App() {
                     },
                   };
                 });
-                if (sessionID === selectedSessionId && status.message) {
-                  setEvents((current) => [`${status.type} - ${status.message}`, ...current].slice(0, 20));
+                if (sessionID === selectedSessionIdRef.current && statusMessage) {
+                  setEvents((current) => [`${nextStatus} - ${statusMessage}`, ...current].slice(0, 20));
                 }
 
-                setAwaitingSessionCompletion((current) => {
-                  if (!current || current.sessionId !== sessionID) return current;
+                setAwaitingSessionCompletionBySession((current) => {
+                  const awaiting = current[sessionID];
+                  if (!awaiting) return current;
                   if (nextStatus === "busy") {
-                    return { ...current, seenBusy: true };
+                    return {
+                      ...current,
+                      [sessionID]: { ...awaiting, seenBusy: true },
+                    };
                   }
-                  return current.seenBusy ? null : current;
+                  return nextStatus === "idle" && awaiting.seenBusy ? removeSessionKey(current, sessionID) : current;
                 });
               }
+            }
+
+            if (payloadType === "session.error") {
+              const sessionID = properties.sessionID as string | undefined;
+              const error = properties.error as { message?: string } | undefined;
+              if (sessionID) {
+                setStatusMap((current) => ({ ...current, [sessionID]: "idle" }));
+                setSessionActivity((current) => ({
+                  ...current,
+                  [sessionID]: {
+                    busySince: undefined,
+                    lastActivityAt: Date.now(),
+                  },
+                }));
+              }
+              if (sessionID) {
+                setAwaitingSessionCompletionBySession((current) => removeSessionKey(current, sessionID));
+              }
+              if (sessionID === selectedSessionIdRef.current || !sessionID) {
+                setEvents((current) => [`session.error - ${error?.message || "Unknown session error"}`, ...current].slice(0, 20));
+              }
+              scheduleRefresh(sessionID);
+              return;
             }
 
             if (payloadType === "session.diff") {
               const sessionID = properties.sessionID as string | undefined;
               const diff = properties.diff as unknown[] | undefined;
-              if (sessionID === selectedSessionId && Array.isArray(diff)) {
-                setDiffCount(diff.length);
+              if (sessionID && Array.isArray(diff)) {
+                setDiffCountBySession((current) => ({ ...current, [sessionID]: diff.length }));
               }
             }
 
@@ -1241,11 +1332,16 @@ function App() {
               const sessionID = properties.sessionID as string | undefined;
               if (sessionID) {
                 setStatusMap((current) => ({ ...current, [sessionID]: "idle" }));
-                setAwaitingSessionCompletion((current) =>
-                  current?.sessionId === sessionID && current.seenBusy ? null : current,
-                );
+                setSessionActivity((current) => ({
+                  ...current,
+                  [sessionID]: {
+                    busySince: undefined,
+                    lastActivityAt: Date.now(),
+                  },
+                }));
               }
-              scheduleRefresh();
+              scheduleRefresh(sessionID);
+              return;
             }
           },
           controller.signal,
@@ -1255,16 +1351,15 @@ function App() {
           const message = error instanceof Error ? error.message : "stream unavailable";
           setEvents((current) => [`Event stream disconnected - ${message}`, ...current].slice(0, 20));
           clearReconnectTimer();
+          reconnectAttemptRef.current += 1;
+          const reconnectDelay = Math.min(1500 * 2 ** (reconnectAttemptRef.current - 1), 15000);
           reconnectTimeoutRef.current = window.setTimeout(() => {
             void refreshSessions();
-            if (selectedSessionId) {
-              void refreshMessages();
-              void refreshDiff();
-              void refreshPermissions();
-              void refreshQuestions();
+            for (const sessionId of knownSessionIdsRef.current) {
+              void refreshSessionData(sessionId);
             }
             connectStream();
-          }, 1500);
+          }, reconnectDelay);
         });
     };
 
@@ -1274,12 +1369,12 @@ function App() {
       isDisposed = true;
       controller.abort();
       clearReconnectTimer();
-      if (refreshTimeoutRef.current) {
-        window.clearTimeout(refreshTimeoutRef.current);
-        refreshTimeoutRef.current = null;
+      for (const timeout of Object.values(refreshTimeoutsRef.current)) {
+        window.clearTimeout(timeout);
       }
+      refreshTimeoutsRef.current = {};
     };
-  }, [config, connectionState, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
+  }, [config, connectionState, refreshSessionData, refreshSessions]);
 
   useEffect(() => {
     if (!selectedSessionId || !config.password || !isSessionBusy) return;
@@ -1313,10 +1408,12 @@ function App() {
     const poll = async () => {
       try {
         await refreshSessions();
-      } catch {
-        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "session refresh failed";
+        setEvents((current) => [`Session poll failed - ${message}`, ...current].slice(0, 20));
+      } finally {
+        timer = window.setTimeout(poll, 15000);
       }
-      timer = window.setTimeout(poll, 15000);
     };
     timer = window.setTimeout(poll, 15000);
 
@@ -1330,13 +1427,15 @@ function App() {
 
     const interval = window.setInterval(async () => {
       try {
-        const health = await opencodeApi.health(config);
-        setEvents((current) => [
-          `Health OK - ${health.version} - ${new Date().toLocaleTimeString()}`,
-          ...current,
-        ].slice(0, 20));
+        await opencodeApi.health(config);
+        healthFailureCountRef.current = 0;
       } catch (error) {
         const message = error instanceof Error ? error.message : "event unavailable";
+        healthFailureCountRef.current += 1;
+        if (healthFailureCountRef.current >= 2) {
+          setConnectionState("error");
+          setConnectStatus(`连接中断: ${message}`);
+        }
         setEvents((current) => [`Health check failed - ${message}`, ...current].slice(0, 20));
       }
     }, 20000);
@@ -1364,7 +1463,7 @@ function App() {
       statusMap={statusMap}
       selectedSessionId={selectedSessionId}
       selectedSession={selectedSession}
-      messages={messages}
+      messages={visibleMessages}
       canLoadOlderMessages={Boolean(messagesNextCursor)}
       isLoadingOlderMessages={isLoadingOlderMessages}
       draft={draft}

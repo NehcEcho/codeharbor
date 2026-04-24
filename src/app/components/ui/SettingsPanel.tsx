@@ -51,6 +51,7 @@ export function SettingsPanel({
   const [isModelsOpen, setIsModelsOpen] = useState(true);
   const [isContextOpen, setIsContextOpen] = useState(true);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
+  const availableModelCount = modelOptions.length;
 
   useEffect(() => {
     const { overflow } = document.body.style;
@@ -113,7 +114,7 @@ export function SettingsPanel({
                 </div>
               </div>
               <div className="flex items-center gap-2 pt-1 text-xs text-stone-400">
-                <span>{Math.max(modelOptions.length - 1, 0)} items</span>
+                <span>{availableModelCount} items</span>
                 <ChevronDownIcon className={`h-4 w-4 transition-transform ${isModelsOpen ? "rotate-180" : ""}`} />
               </div>
             </button>
@@ -142,7 +143,7 @@ export function SettingsPanel({
                 <div className="mt-4 flex items-center justify-between gap-3">
                   <label className="block text-[13px] font-medium text-stone-500">Models</label>
                   <p className="text-[11px] text-stone-400">
-                    {isLoadingModels ? "Loading..." : `${modelOptions.length - 1} available`}
+                    {isLoadingModels ? "Loading..." : `${availableModelCount} available`}
                   </p>
                 </div>
 

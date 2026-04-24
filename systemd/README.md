@@ -66,3 +66,4 @@ sudo systemctl restart codeharbor.service
 
 - The included OpenCode password is the current project default. Change it before exposing the service beyond local development.
 - If the `opencode` binary moves, update `ExecStart` in `opencode.service`.
+- If the web server entrypoint moves, update `ExecStart` in `codeharbor.service`.

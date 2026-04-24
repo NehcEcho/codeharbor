@@ -12,6 +12,7 @@ import type {
   ConfigProvider,
   ConnectionState,
   PermissionRequest,
+  QuestionActionResult,
   QuestionRequest,
   SkillItem,
   ServerConfig,
@@ -141,8 +142,8 @@ export function MainLayout({
   onRefreshDiff: () => void;
   onPermissionAction: (id: string, action: "once" | "always" | "reject") => Promise<void>;
   respondingPermissionId: string | null;
-  onQuestionReply: (id: string, answers: string[][]) => Promise<void>;
-  onQuestionReject: (id: string) => Promise<void>;
+  onQuestionReply: (id: string, answers: string[][]) => Promise<QuestionActionResult>;
+  onQuestionReject: (id: string) => Promise<QuestionActionResult>;
 }) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [isMobileStatusOpen, setIsMobileStatusOpen] = useState(false);
@@ -154,12 +155,7 @@ export function MainLayout({
   }, [selectedSessionId, isConnected]);
 
   useEffect(() => {
-    if (!isConnected) {
-      setIsSettingsOpen(false);
-    }
-    if (isConnected) {
-      setIsSettingsOpen(false);
-    }
+    setIsSettingsOpen(false);
   }, [isConnected]);
 
   const serverLabel = useMemo(() => {

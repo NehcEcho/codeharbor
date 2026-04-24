@@ -386,11 +386,16 @@ export function MessageBubble({ message, isLatest = false }: { message: ChatMess
 
       <div className="flex-1 min-w-0 space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between sm:gap-4 -mt-1 mb-2">
-          <div className="font-semibold text-[15px] text-stone-900 flex flex-wrap items-center gap-2">
-            {isUser ? "You" : isTool ? "Tool Execution" : "OpenCode"}
-            {usageSummary ? (
-              <span className="inline-flex sm:hidden items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-medium text-stone-500">
-                {usageSummary.compact}
+            <div className="font-semibold text-[15px] text-stone-900 flex flex-wrap items-center gap-2">
+              {isUser ? "You" : isTool ? "Tool Execution" : "OpenCode"}
+              {message.deliveryError ? (
+                <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">
+                  Send failed
+                </span>
+              ) : null}
+              {usageSummary ? (
+                <span className="inline-flex sm:hidden items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-0.5 text-[11px] font-medium text-stone-500">
+                  {usageSummary.compact}
               </span>
             ) : null}
           </div>
@@ -464,6 +469,11 @@ export function MessageBubble({ message, isLatest = false }: { message: ChatMess
               </div>
             );
           })}
+        {message.deliveryError ? (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            {message.deliveryError}
+          </div>
+        ) : null}
       </div>
     </div>
   );
