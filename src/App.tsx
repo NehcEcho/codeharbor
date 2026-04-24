@@ -392,7 +392,7 @@ function App() {
     [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions],
   );
 
-  const refreshRemoteConfig = useCallback(async (targetConfig: ServerConfig = config) => {
+  const refreshRemoteConfig = useCallback(async (targetConfig: ServerConfig = configRef.current) => {
     const requestSeq = ++remoteConfigRequestSeqRef.current;
     if (!targetConfig.password) {
       const nextConfig = { ...targetConfig, model: "" };
@@ -420,9 +420,9 @@ function App() {
       return nextConfig;
     });
     return remoteConfig;
-  }, [config]);
+  }, []);
 
-  const refreshModelProviders = useCallback(async (targetConfig: ServerConfig = config) => {
+  const refreshModelProviders = useCallback(async (targetConfig: ServerConfig = configRef.current) => {
     const requestSeq = ++modelProvidersRequestSeqRef.current;
     if (!targetConfig.password) {
       setModelProviders([]);
@@ -450,9 +450,9 @@ function App() {
         setIsLoadingModels(false);
       }
     }
-  }, [config]);
+  }, []);
 
-  const refreshCommands = useCallback(async (targetConfig: ServerConfig = config) => {
+  const refreshCommands = useCallback(async (targetConfig: ServerConfig = configRef.current) => {
     if (!targetConfig.password) {
       setCommands([]);
       setCommandsError(null);
@@ -472,9 +472,9 @@ function App() {
     } finally {
       setIsLoadingCommands(false);
     }
-  }, [config]);
+  }, []);
 
-  const refreshSkills = useCallback(async (targetConfig: ServerConfig = config) => {
+  const refreshSkills = useCallback(async (targetConfig: ServerConfig = configRef.current) => {
     if (!targetConfig.password) {
       setSkills([]);
       setSkillsError(null);
@@ -494,7 +494,7 @@ function App() {
     } finally {
       setIsLoadingSkills(false);
     }
-  }, [config]);
+  }, []);
 
   const handleRefreshCurrentSession = useCallback(async () => {
     if (isRefreshingSession) return;
@@ -1073,22 +1073,22 @@ function App() {
   useEffect(() => {
     if (connectionState !== "success") return;
     void refreshRemoteConfig();
-  }, [connectionState, refreshRemoteConfig]);
+  }, [connectionState]);
 
   useEffect(() => {
     if (connectionState !== "success") return;
     void refreshModelProviders();
-  }, [connectionState, refreshModelProviders]);
+  }, [connectionState]);
 
   useEffect(() => {
     if (connectionState !== "success") return;
     void refreshCommands();
-  }, [connectionState, refreshCommands]);
+  }, [connectionState]);
 
   useEffect(() => {
     if (connectionState !== "success") return;
     void refreshSkills();
-  }, [connectionState, refreshSkills]);
+  }, [connectionState]);
 
   useEffect(() => {
     if (!config.model || modelProviders.length === 0) return;
