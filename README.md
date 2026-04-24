@@ -128,6 +128,8 @@ Runtime state and logs live under:
 - `.runtime/local-stack.json`
 - `.runtime/logs/`
 
+Cross-platform startup and auto-start notes are in `docs/platform-startup.md`.
+
 ## Docker Compose
 
 You can also run the web app in Docker:
