@@ -501,14 +501,26 @@ function App() {
 
     setIsRefreshingSession(true);
     try {
-      await refreshSessions();
+      const targetConfig = configRef.current;
+      await Promise.allSettled([
+        refreshRemoteConfig(targetConfig),
+        refreshCommands(targetConfig),
+        refreshModelProviders(targetConfig),
+        refreshSkills(targetConfig),
+        refreshSessions(targetConfig),
+      ]);
       const sessionId = selectedSessionIdRef.current;
-      if (!sessionId) return;
-      await refreshSessionData(sessionId);
+      if (sessionId) {
+        await refreshSessionData(sessionId);
+      }
+      setEvents((current) => ["Manual refresh completed", ...current].slice(0, 20));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "refresh failed";
+      setEvents((current) => [`Manual refresh failed - ${message}`, ...current].slice(0, 20));
     } finally {
       setIsRefreshingSession(false);
     }
-  }, [isRefreshingSession, refreshSessionData, refreshSessions]);
+  }, [isRefreshingSession, refreshCommands, refreshModelProviders, refreshRemoteConfig, refreshSessionData, refreshSessions, refreshSkills]);
 
   const handleConnect = useCallback(async () => {
     const normalized = {
