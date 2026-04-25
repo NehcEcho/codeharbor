@@ -128,8 +128,8 @@ export function CommandInput({
           disabled={Boolean(runningCommandName)}
         />
 
-        <div className="flex flex-col gap-2 px-3 pb-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 sm:pb-0 md:overflow-visible">
+        <div className="flex items-center gap-2 px-3 pb-3">
+          <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-1 md:overflow-visible">
             <button
               className="rounded-lg p-1.5 text-stone-300 transition-colors cursor-not-allowed"
               title="Attachments are not available yet"
@@ -290,7 +290,7 @@ export function CommandInput({
               <button
                 onClick={() => setIsAgentMenuOpen(!isAgentMenuOpen)}
                 className={clsx(
-                  "flex h-8 min-w-0 max-w-full items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors cursor-pointer sm:max-w-none sm:gap-1.5",
+                  "flex h-8 min-w-0 max-w-full shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors cursor-pointer sm:max-w-none sm:gap-1.5",
                   agent === "build"
                     ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
                     : "bg-blue-50 text-blue-700 hover:bg-blue-100",
@@ -298,7 +298,7 @@ export function CommandInput({
                 type="button"
               >
                 {agent === "build" ? <WrenchIcon className="h-3.5 w-3.5 shrink-0" /> : <LightbulbIcon className="h-3.5 w-3.5 shrink-0" />}
-                <span className="max-w-[4.5rem] truncate sm:max-w-none">
+                <span className="max-w-[2.75rem] truncate sm:max-w-none">
                   <span className="sm:hidden">{agent === "build" ? "Build" : "Plan"}</span>
                   <span className="hidden sm:inline">{agent === "build" ? "Build Agent" : "Plan Agent"}</span>
                 </span>
@@ -371,7 +371,7 @@ export function CommandInput({
             </div>
           </div>
 
-          <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             <div className="relative">
               <button
                 onClick={() => setIsActionMenuOpen((current) => !current)}

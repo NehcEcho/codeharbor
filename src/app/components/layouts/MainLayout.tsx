@@ -346,6 +346,7 @@ export function MainLayout({
                       onPermissionAction={onPermissionAction}
                       onQuestionReply={onQuestionReply}
                       onQuestionReject={onQuestionReject}
+                      onClose={() => setIsMobileStatusOpen(false)}
                     />
                   </motion.div>
                 </>

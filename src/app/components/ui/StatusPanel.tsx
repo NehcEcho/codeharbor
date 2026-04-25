@@ -1,4 +1,4 @@
-import { BotIcon, ShieldAlertIcon } from "./icons";
+import { BotIcon, ShieldAlertIcon, XIcon } from "./icons";
 import { PermissionCard } from "../chat/PermissionCard";
 import { QuestionCard } from "../chat/QuestionCard";
 import type { PermissionRequest, QuestionActionResult, QuestionRequest } from "../../../types";
@@ -10,6 +10,7 @@ export function StatusPanel({
   onPermissionAction,
   onQuestionReply,
   onQuestionReject,
+  onClose,
 }: {
   permissionRequests: PermissionRequest[];
   questionRequests: QuestionRequest[];
@@ -17,6 +18,7 @@ export function StatusPanel({
   onPermissionAction: (id: string, action: "once" | "always" | "reject") => Promise<void>;
   onQuestionReply: (id: string, answers: string[][]) => Promise<QuestionActionResult>;
   onQuestionReject: (id: string) => Promise<QuestionActionResult>;
+  onClose?: () => void;
 }) {
   const totalCount = permissionRequests.length + questionRequests.length;
   const hasPendingActions = totalCount > 0;
@@ -45,9 +47,22 @@ export function StatusPanel({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-left shadow-sm sm:shrink-0 sm:text-right">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">Open</div>
-              <div className="mt-0.5 text-base font-semibold text-stone-900">{totalCount}</div>
+            <div className="flex items-start gap-2 sm:shrink-0">
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-left shadow-sm sm:text-right">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-400">Open</div>
+                <div className="mt-0.5 text-base font-semibold text-stone-900">{totalCount}</div>
+              </div>
+              {onClose ? (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-stone-200 bg-stone-50 text-stone-600 shadow-sm transition hover:bg-stone-100 hover:text-stone-900 lg:hidden"
+                  title="Close action queue"
+                  aria-label="Close action queue"
+                >
+                  <XIcon className="h-4 w-4" />
+                </button>
+              ) : null}
             </div>
           </div>
 
