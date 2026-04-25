@@ -8,6 +8,7 @@ import {
   mergeMessages,
   normalizeSessionStatus,
   prependOlderMessages,
+  replaceOptimisticMessageInfo,
   sortMessages,
   upsertMessagesById,
 } from "./appState";
@@ -131,6 +132,91 @@ test("confirmOptimisticMessage replaces exact optimistic id without text matchin
 
   assert.deepEqual(next.map((item) => item.id), ["local-1", "server-2"]);
   assert.equal(next.find((item) => item.id === "local-1")?.isPending, true);
+});
+
+test("replaceOptimisticMessageInfo upgrades the targeted pending user message when server info arrives first", () => {
+  const current = [message("local-1", "same", { isPending: true, createdAt: 1_000 })];
+
+  const next = replaceOptimisticMessageInfo(current, "local-1", {
+    id: "server-1",
+    role: "user",
+    sessionID: "session-a",
+    time: { created: 1_005 },
+  });
+
+  assert.deepEqual(next.map((item) => item.id), ["server-1"]);
+  assert.equal(next[0].isPending, false);
+  assert.equal(next[0].role, "user");
+});
+
+test("replaceOptimisticMessageInfo leaves other optimistic messages untouched", () => {
+  const current = [
+    message("local-1", "first", { isPending: true, createdAt: 1_000 }),
+    message("local-2", "second", { isPending: true, createdAt: 2_000 }),
+  ];
+
+  const next = replaceOptimisticMessageInfo(current, "local-1", {
+    id: "server-1",
+    role: "user",
+    sessionID: "session-a",
+    time: { created: 1_005 },
+  });
+
+  assert.deepEqual(next.map((item) => item.id), ["server-1", "local-2"]);
+  assert.equal(next.find((item) => item.id === "local-2")?.isPending, true);
+});
+
+test("replaceOptimisticMessageInfo falls back to upsert when target optimistic message is missing", () => {
+  const current = [message("local-2", "second", { isPending: true, createdAt: 2_000 })];
+
+  const next = replaceOptimisticMessageInfo(current, "local-1", {
+    id: "server-1",
+    role: "user",
+    sessionID: "session-a",
+    time: { created: 1_005 },
+  });
+
+  assert.deepEqual(next.map((item) => item.id), ["server-1", "local-2"]);
+  assert.equal(next.find((item) => item.id === "local-2")?.isPending, true);
+});
+
+test("replaceOptimisticMessageInfo does not replace optimistic user message with assistant info", () => {
+  const current = [message("local-1", "same", { isPending: true, createdAt: 1_000 })];
+
+  const next = replaceOptimisticMessageInfo(current, "local-1", {
+    id: "assistant-1",
+    role: "assistant",
+    sessionID: "session-a",
+    time: { created: 1_005 },
+  });
+
+  assert.deepEqual(next.map((item) => item.id), ["local-1", "assistant-1"]);
+  assert.equal(next.find((item) => item.id === "local-1")?.isPending, true);
+  assert.equal(next.find((item) => item.id === "assistant-1")?.role, "assistant");
+});
+
+test("replaceOptimisticMessageInfo does not replace non-user optimistic target", () => {
+  const current = [
+    {
+      id: "local-tool",
+      role: "tool" as const,
+      parts: [],
+      timestampLabel: "10:00",
+      createdAt: 1_000,
+      isPending: true,
+    },
+  ];
+
+  const next = replaceOptimisticMessageInfo(current, "local-tool", {
+    id: "server-1",
+    role: "user",
+    sessionID: "session-a",
+    time: { created: 1_005 },
+  });
+
+  assert.deepEqual(next.map((item) => item.id), ["local-tool", "server-1"]);
+  assert.equal(next.find((item) => item.id === "local-tool")?.role, "tool");
+  assert.equal(next.find((item) => item.id === "server-1")?.role, "user");
 });
 
 test("prependOlderMessages keeps strict pagination order and ignores duplicates", () => {

@@ -290,16 +290,19 @@ export function CommandInput({
               <button
                 onClick={() => setIsAgentMenuOpen(!isAgentMenuOpen)}
                 className={clsx(
-                  "flex h-8 min-w-0 max-w-full items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors cursor-pointer sm:max-w-none",
+                  "flex h-8 min-w-0 max-w-full items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors cursor-pointer sm:max-w-none sm:gap-1.5",
                   agent === "build"
-                    ? "text-amber-700 bg-amber-50 hover:bg-amber-100"
-                    : "text-blue-700 bg-blue-50 hover:bg-blue-100",
+                    ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                    : "bg-blue-50 text-blue-700 hover:bg-blue-100",
                 )}
                 type="button"
               >
                 {agent === "build" ? <WrenchIcon className="h-3.5 w-3.5 shrink-0" /> : <LightbulbIcon className="h-3.5 w-3.5 shrink-0" />}
-                <span className="truncate">{agent === "build" ? "Build Agent" : "Plan Agent"}</span>
-                <Settings2Icon className="h-2.5 w-2.5 shrink-0 opacity-60" />
+                <span className="max-w-[4.5rem] truncate sm:max-w-none">
+                  <span className="sm:hidden">{agent === "build" ? "Build" : "Plan"}</span>
+                  <span className="hidden sm:inline">{agent === "build" ? "Build Agent" : "Plan Agent"}</span>
+                </span>
+                <Settings2Icon className="hidden h-2.5 w-2.5 shrink-0 opacity-60 sm:block" />
               </button>
 
               <AnimatePresence>

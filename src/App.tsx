@@ -28,6 +28,7 @@ import {
   normalizeBaseUrl,
   normalizeSessionStatus,
   prependOlderMessages,
+  replaceOptimisticMessageInfo,
   sortMessages,
   upsertMessagesById,
   upsertMessageInfo,
@@ -83,6 +84,8 @@ type AwaitingSessionCompletion = {
   seenBusy: boolean;
   startedAt: number;
 };
+
+type InFlightOptimisticMessageMap = Record<string, string>;
 
 const INITIAL_MESSAGE_PAGE_SIZE = 30;
 const OLDER_MESSAGE_PAGE_SIZE = 30;
@@ -200,6 +203,7 @@ function App() {
   const reconnectAttemptRef = useRef(0);
   const healthFailureCountRef = useRef(0);
   const inFlightSessionsRef = useRef<Set<string>>(new Set());
+  const inFlightOptimisticMessageBySessionRef = useRef<InFlightOptimisticMessageMap>({});
   const permissionRequestsBySessionRef = useRef<Record<string, PermissionRequest[]>>({});
   const questionRequestsBySessionRef = useRef<Record<string, QuestionRequest[]>>({});
 
@@ -270,6 +274,9 @@ function App() {
     permissionsRequestSeqRef.current = pruneSessionRecord(permissionsRequestSeqRef.current, validSessionIds);
     inFlightSessionsRef.current = new Set(
       [...inFlightSessionsRef.current].filter((sessionId) => validSessionIds.has(sessionId)),
+    );
+    inFlightOptimisticMessageBySessionRef.current = Object.fromEntries(
+      Object.entries(inFlightOptimisticMessageBySessionRef.current).filter(([sessionId]) => validSessionIds.has(sessionId)),
     );
 
     setSelectedSessionId((current) => {
@@ -856,6 +863,7 @@ function App() {
   const dispatchQueuedMessage = useCallback(
     async (item: QueuedMessage) => {
       inFlightSessionsRef.current.add(item.sessionId);
+      inFlightOptimisticMessageBySessionRef.current[item.sessionId] = item.optimisticMessageId;
       setInFlightSessions((current) => ({ ...current, [item.sessionId]: true }));
       setIsSending(item.sessionId === selectedSessionIdRef.current);
 
@@ -929,6 +937,7 @@ function App() {
         setEvents((current) => [`Queued send failed - ${message}`, ...current].slice(0, 20));
       } finally {
         inFlightSessionsRef.current.delete(item.sessionId);
+        delete inFlightOptimisticMessageBySessionRef.current[item.sessionId];
         setInFlightSessions((current) => removeSessionKey(current, item.sessionId));
         if (item.sessionId === selectedSessionIdRef.current) {
           setIsSending(false);
@@ -1166,9 +1175,13 @@ function App() {
               const info = properties.info as MessageEnvelope["info"] | undefined;
               if (info?.sessionID) {
                 const sessionID = info.sessionID;
+                const optimisticMessageId = inFlightOptimisticMessageBySessionRef.current[sessionID];
+                const shouldReplaceOptimistic = (info.role || "assistant") === "user" && Boolean(optimisticMessageId);
                 setMessagesBySession((current) => ({
                   ...current,
-                  [sessionID]: upsertMessageInfo(current[sessionID] || [], info),
+                  [sessionID]: shouldReplaceOptimistic && optimisticMessageId
+                    ? replaceOptimisticMessageInfo(current[sessionID] || [], optimisticMessageId, info)
+                    : upsertMessageInfo(current[sessionID] || [], info),
                 }));
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
               }

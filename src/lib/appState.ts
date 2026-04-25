@@ -147,6 +147,43 @@ export function upsertMessageInfo(current: ChatMessage[], info: MessageEnvelope[
   ]);
 }
 
+export function replaceOptimisticMessageInfo(
+  current: ChatMessage[],
+  optimisticMessageId: string,
+  info: MessageEnvelope["info"],
+) {
+  const role = (info.role || "assistant") as ChatMessage["role"];
+  if (role !== "user") {
+    return upsertMessageInfo(current, info);
+  }
+
+  const existing = current.find((message) => message.id === info.id);
+  if (existing) {
+    return upsertMessageInfo(current, info);
+  }
+
+  const optimistic = current.find((message) => message.id === optimisticMessageId);
+  if (!optimistic || optimistic.role !== "user") {
+    return upsertMessageInfo(current, info);
+  }
+
+  const createdAt = info.time?.created || info.time?.updated;
+  return current.map((message) =>
+    message.id === optimisticMessageId
+      ? {
+          ...message,
+          id: info.id,
+          role,
+          timestampLabel: formatTimestamp(createdAt),
+          createdAt: createdAt || message.createdAt,
+          usage: mapMessageUsage(info),
+          isPending: false,
+          deliveryError: undefined,
+        }
+      : message,
+  );
+}
+
 export function upsertMessagePart(
   current: ChatMessage[],
   part: { messageID?: string; id?: string; type?: string; text?: string },
