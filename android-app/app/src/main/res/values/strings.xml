@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CodeHarbor Mobile</string>
+    <string name="status_connecting">Connecting to CodeHarbor</string>
+    <string name="status_loading">Loading workspace</string>
+    <string name="status_ready">Workspace ready</string>
+    <string name="status_error">Connection issue</string>
+    <string name="status_subtitle_default">A focused mobile wrapper for your CodeHarbor sessions.</string>
+    <string name="status_subtitle_loading">Fetching the latest remote workspace.</string>
+    <string name="status_subtitle_ready">Use pull-to-refresh or the toolbar to resync quickly.</string>
+    <string name="status_subtitle_error">Check the server address, credentials, or local network reachability.</string>
+    <string name="error_title">Unable to load CodeHarbor</string>
+    <string name="error_message_default">The mobile wrapper could not reach the configured server yet.</string>
+    <string name="retry">Retry</string>
+    <string name="refresh">Refresh</string>
+    <string name="back">Back</string>
+    <string name="open_browser">Open in browser</string>
+    <string name="server_settings">Server settings</string>
+    <string name="server_url_hint">CodeHarbor URL</string>
+    <string name="username_hint">Username</string>
+    <string name="password_hint">Password</string>
+    <string name="settings_helper">For local development on a real device, replace 127.0.0.1 with your computer LAN IP.</string>
+    <string name="settings_tip">Quick presets help when switching between emulator testing and a desktop-hosted CodeHarbor server.</string>
+    <string name="settings_saved">Server settings saved</string>
+    <string name="settings_invalid_url">Enter a valid http:// or https:// URL</string>
+    <string name="no_network">No network connection detected</string>
+    <string name="browser_missing">No browser app is available</string>
+    <string name="preset_emulator">Emulator</string>
+    <string name="preset_localhost">127.0.0.1</string>
+    <string name="preset_default_creds">Default creds</string>
+    <string name="endpoint_format">%1$s  |  %2$s</string>
+</resources>
