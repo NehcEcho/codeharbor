@@ -1,6 +1,6 @@
 # Platform Startup Guide
 
-This guide covers how to run CodeHarbor on Windows, Linux, and macOS, including optional auto-start setup after login or boot.
+This guide covers the current launcher-based workflow for running CodeHarbor on Windows and Linux, plus the manual fallback flow for macOS.
 
 ## Shared defaults
 
@@ -19,7 +19,7 @@ Required local tools:
 - npm
 - OpenCode CLI (`opencode`)
 
-Install dependencies first:
+Install dependencies first if you want to run commands directly:
 
 ```bash
 npm install
@@ -33,96 +33,79 @@ npm run build
 
 ## Windows
 
-### Start manually
+### Recommended launcher flow
 
-CodeHarbor includes a Windows stack runner.
+Use the top-level launcher files in `launchers/`.
 
 Start everything:
 
 ```powershell
-npm run stack -- up
+launchers\start.cmd
 ```
 
-Start without opening the browser:
+Enable login auto-start:
 
 ```powershell
-npm run stack -- up --no-browser
+launchers\enable-autostart.cmd
 ```
 
-Check status:
+Other Windows helpers live in `launchers/windows/`:
 
-```powershell
-npm run stack -- status
-```
+- `launchers/windows/windows-stop.cmd`
+- `launchers/windows/windows-restart.cmd`
+- `launchers/windows/windows-status.cmd`
+- `launchers/windows/windows-autostart-disable.cmd`
+- `launchers/windows/windows-autostart-status.cmd`
 
-Stop:
+The Windows launcher will:
 
-```powershell
-npm run stack -- down
-```
+- check for `npm`
+- check for `opencode`
+- run `npm install` if `node_modules/` is missing
+- call the built-in stack runner
 
 Logs and runtime state are written to:
 
 - `.runtime/local-stack.json`
 - `.runtime/logs/`
 
-### Enable auto-start after login with Task Scheduler
+### Notes
 
-The simplest reliable Windows auto-start method is Task Scheduler.
-
-1. Open `Task Scheduler`
-2. Create a new task, for example `CodeHarbor`
-3. On `Triggers`, add `At log on`
-4. On `Actions`, add:
-   - `Program/script`:
-
-     ```text
-     powershell.exe
-     ```
-
-   - `Add arguments`:
-
-     ```text
-     -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\codeharbor\scripts\run-windows.ps1" up --no-browser
-     ```
-
-   - `Start in`:
-
-     ```text
-     C:\path\to\codeharbor
-     ```
-
-5. Save the task
-
-If you prefer `schtasks`, adjust the path and run:
-
-```powershell
-schtasks /Create /TN "CodeHarbor" /SC ONLOGON /RL LIMITED /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"C:\path\to\codeharbor\scripts\run-windows.ps1\" up --no-browser"
-```
-
-To remove it later:
-
-```powershell
-schtasks /Delete /TN "CodeHarbor" /F
-```
+- `launchers\enable-autostart.cmd` creates a Windows Task Scheduler entry named `CodeHarbor`
+- the task runs `scripts/run-windows.ps1 up --no-browser` at login
+- if you prefer direct control, the underlying runner still supports `npm run stack -- up|down|restart|status`
 
 ## Linux
 
-### Start manually
+### Recommended launcher flow
 
-For local manual background startup without `systemd`:
+Use the Linux launchers in `launchers/linux/`.
 
-```bash
-chmod +x docs/deployment/start-manual.sh
-./docs/deployment/start-manual.sh
-```
-
-Stop it:
+Give the scripts execute permission once:
 
 ```bash
-chmod +x docs/deployment/stop-manual.sh
-./docs/deployment/stop-manual.sh
+chmod +x launchers/linux/* launchers/linux/*.sh
 ```
+
+Start manually:
+
+```bash
+./launchers/linux/start
+```
+
+Enable boot auto-start:
+
+```bash
+./launchers/linux/enable-autostart
+```
+
+Other Linux helpers live in `launchers/linux/`:
+
+- `launchers/linux/linux-stop.sh`
+- `launchers/linux/linux-restart.sh`
+- `launchers/linux/linux-status.sh`
+- `launchers/linux/linux-autostart-disable.sh`
+- `launchers/linux/linux-autostart-status.sh`
 
 This starts:
 
@@ -131,56 +114,48 @@ This starts:
 
 ### Enable auto-start on boot with systemd
 
-This repo already includes `systemd` unit files:
-
-- `systemd/opencode.service`
-- `systemd/codeharbor.service`
-
-Install and enable them:
+The recommended way is now:
 
 ```bash
-chmod +x docs/deployment/start-systemd.sh
-./docs/deployment/start-systemd.sh
+./launchers/linux/enable-autostart
 ```
 
-That script copies the service files into `/etc/systemd/system/`, reloads `systemd`, and enables both services at boot.
+That launcher:
+
+- checks for `npm`, `node`, `opencode`, and `systemctl`
+- installs dependencies if needed
+- runs `npm run build`
+- generates `/etc/systemd/system/opencode.service`
+- generates `/etc/systemd/system/codeharbor.service`
+- enables and starts both services
 
 Check status:
 
 ```bash
-systemctl status opencode.service
-systemctl status codeharbor.service
+./launchers/linux/linux-autostart-status.sh
 ```
 
 Stop both:
 
 ```bash
-chmod +x docs/deployment/stop-systemd.sh
-./docs/deployment/stop-systemd.sh
+./launchers/linux/linux-autostart-disable.sh
 ```
 
 Rebuild and restart after frontend changes:
 
 ```bash
-chmod +x docs/deployment/restart-systemd.sh
-./docs/deployment/restart-systemd.sh
+npm run build
+sudo systemctl restart codeharbor.service
 ```
 
 ### Notes about the included Linux services
 
-The checked-in service files currently assume:
+The launcher-generated services use your current environment instead of the checked-in fixed paths.
 
-- project path: `/root/codeharbor`
-- Node path: `/usr/local/bin/node`
-- OpenCode path: `/root/.opencode/bin/opencode`
-- service user: `root`
-
-If your machine uses different paths or a non-root user, edit:
-
-- `systemd/opencode.service`
-- `systemd/codeharbor.service`
-
-before running the install helper.
+- project path is detected from the current checkout
+- `node` and `opencode` paths are detected automatically
+- service user defaults to `CODEHARBOR_SERVICE_USER`, otherwise `SUDO_USER` or `USER`
+- the checked-in files under `systemd/` are still useful as examples, but they are no longer the preferred entrypoint for local setup
 
 ## macOS
 

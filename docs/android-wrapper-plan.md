@@ -1,4 +1,11 @@
-# Android Wrapper Plan
+# Android Wrapper Plan (Archive / Draft)
+
+## Status
+
+This file is a planning document, not the current main runtime documentation for CodeHarbor.
+
+- keep it as a draft/reference if Android wrapper work resumes
+- do not treat it as the primary setup guide for this repository
 
 ## Goal
 
@@ -59,6 +66,11 @@ The Android app should request only the minimum required permissions.
   - navigate back inside `WebView`
   - open current page in external browser
   - rotate screen and confirm state restore is acceptable
+
+## Developer Notes
+
+- Android-specific setup and usage documentation lives in `android-app/README.md`.
+- Chinese Android-specific setup and usage documentation lives in `android-app/README.zh-CN.md`.
 
 ## Git / Workspace Notes
 

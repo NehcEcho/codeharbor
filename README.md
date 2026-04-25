@@ -83,9 +83,23 @@ Password:   opencode-demo-4096
 
 ## Local stack runner
 
-Use the built-in runner instead of separate top-level start/stop scripts.
+Use the launcher scripts for the simplest startup flow.
 
-Start the full local stack:
+Windows start:
+
+```powershell
+launchers\start.cmd
+```
+
+Linux start:
+
+```bash
+./launchers/linux/start
+```
+
+The launchers call the built-in stack runner or deployment helpers for you.
+
+Direct stack command:
 
 ```bash
 npm run stack -- up
@@ -154,34 +168,31 @@ More notes are in `docs/deployment.md`.
 
 ## Systemd production startup
 
-For Linux servers, the recommended production setup is `systemd` with `root` services.
+For Linux servers, the recommended entrypoint is `launchers/linux/enable-autostart`.
+
+```bash
+./launchers/linux/enable-autostart
+```
+
+That script builds the app, detects the current project paths, writes the service files, and enables both services.
+
+The checked-in files in `systemd/` are still useful as templates.
 
 ### Services
 
-- `systemd/opencode.service`: starts OpenCode on port `1656`
-- `systemd/codeharbor.service`: serves the built app on port `1657`
-
-### Install
-
-```bash
-sudo cp /root/codeharbor/systemd/opencode.service /etc/systemd/system/
-sudo cp /root/codeharbor/systemd/codeharbor.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now opencode.service
-sudo systemctl enable --now codeharbor.service
-```
+- `systemd/opencode.service`: example OpenCode unit
+- `systemd/codeharbor.service`: example web UI unit
 
 ### Stop
 
 ```bash
-sudo systemctl stop codeharbor.service opencode.service
+./launchers/linux/linux-autostart-disable.sh
 ```
 
-Or run the helper script:
+### Status
 
 ```bash
-chmod +x /root/codeharbor/systemd/stop-codeharbor.sh
-/root/codeharbor/systemd/stop-codeharbor.sh
+./launchers/linux/linux-autostart-status.sh
 ```
 
 ### Rebuild after frontend changes
