@@ -157,6 +157,12 @@ export function mergeFetchedMessages(
   let replacedOptimistic = false;
 
   for (const message of fetched) {
+    const alreadyConfirmed = merged.some((item) => item.id === message.id);
+    if (alreadyConfirmed) {
+      merged = upsertMessagesById(merged, [message]);
+      continue;
+    }
+
     const optimistic = optimisticMessageId
       ? merged.find((item) => item.id === optimisticMessageId)
       : undefined;

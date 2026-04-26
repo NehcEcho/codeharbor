@@ -132,6 +132,19 @@ export function shouldRestoreFailedDraft(
   return messages.some((message) => Boolean(message.deliveryError));
 }
 
+export function shouldDiscardFailedDraft(
+  failedDraft: FailedDraftLike | undefined,
+  messages: Array<{ id?: string; deliveryError?: string }>,
+) {
+  if (!failedDraft) return false;
+  if (failedDraft.optimisticMessageId) {
+    return !messages.some(
+      (message) => message.id === failedDraft.optimisticMessageId && Boolean(message.deliveryError),
+    );
+  }
+  return !messages.some((message) => Boolean(message.deliveryError));
+}
+
 export function getRequestSessionIdByQuestionId(requests: QuestionRequest[], id: string) {
   return requests.find((item) => item.id === id)?.sessionID || null;
 }

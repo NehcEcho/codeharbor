@@ -16,6 +16,7 @@ import {
   pruneSessionRecord,
   pruneSessionRecordPreserving,
   setSessionCursor,
+  shouldDiscardFailedDraft,
   shouldRestoreFailedDraft,
 } from "./appController";
 
@@ -204,6 +205,19 @@ test("failed draft restore can be cleared after the first repopulation", () => {
   const cleared = removeSessionKey(failedDrafts, "session-a");
   assert.deepEqual(cleared, {});
   assert.equal(shouldRestoreFailedDraft(cleared["session-a"], [{ id: "local-1", deliveryError: "send failed" }], ""), false);
+});
+
+test("failed draft record is discarded once its errored message disappears", () => {
+  const failedDraft = {
+    text: "retry this",
+    agent: "plan",
+    model: "provider/model",
+    optimisticMessageId: "local-1",
+  };
+
+  assert.equal(shouldDiscardFailedDraft(failedDraft, [{ id: "local-1", deliveryError: "send failed" }]), false);
+  assert.equal(shouldDiscardFailedDraft(failedDraft, [{ id: "local-1", deliveryError: undefined }]), true);
+  assert.equal(shouldDiscardFailedDraft(failedDraft, []), true);
 });
 
 test("session send lock covers both preparing and in-flight windows", () => {

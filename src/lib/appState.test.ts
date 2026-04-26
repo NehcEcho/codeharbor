@@ -222,6 +222,49 @@ test("confirmOptimisticMessage replaces exact optimistic id without text matchin
   assert.equal(next.find((item) => item.id === "local-1")?.isPending, true);
 });
 
+test("confirmed user message is not duplicated by later refresh merge", () => {
+  const confirmed = confirmOptimisticMessage(
+    [message("local-1", "same", { isPending: true, createdAt: 10 })],
+    "local-1",
+    message("server-1", "same", { createdAt: 20 }),
+  );
+
+  const next = mergeFetchedMessages(confirmed, [message("server-1", "same", { createdAt: 20 })], "local-1");
+
+  assert.deepEqual(next.map((item) => item.id), ["server-1"]);
+  assert.equal(next[0].isPending, false);
+});
+
+test("confirmed user message is updated in place when SSE info arrives later", () => {
+  const confirmed = confirmOptimisticMessage(
+    [message("local-1", "same", { isPending: true, createdAt: 10 })],
+    "local-1",
+    message("server-1", "same", { createdAt: 20 }),
+  );
+
+  const next = replaceOptimisticMessageInfo(confirmed, "local-1", {
+    id: "server-1",
+    role: "user",
+    sessionID: "session-a",
+    time: { created: 20, updated: 21 },
+  });
+
+  assert.deepEqual(next.map((item) => item.id), ["server-1"]);
+  assert.equal(next[0].isPending, false);
+});
+
+test("refresh merge prefers confirmed server id over optimistic targeting after send confirm", () => {
+  const current = [
+    message("server-1", "same", { createdAt: 20 }),
+    message("local-2", "other", { isPending: true, createdAt: 30 }),
+  ];
+
+  const next = mergeFetchedMessages(current, [message("server-1", "same", { createdAt: 20 })], "local-2");
+
+  assert.deepEqual(next.map((item) => item.id), ["server-1", "local-2"]);
+  assert.equal(next.find((item) => item.id === "local-2")?.isPending, true);
+});
+
 test("replaceOptimisticMessageInfo upgrades the targeted pending user message when server info arrives first", () => {
   const current = [message("local-1", "same", { isPending: true, createdAt: 1_000 })];
 

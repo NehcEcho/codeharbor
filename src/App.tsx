@@ -12,6 +12,7 @@ import {
   pruneSessionRecord,
   pruneSessionRecordPreserving,
   setSessionCursor,
+  shouldDiscardFailedDraft,
   isSessionSendLocked,
   shouldRestoreFailedDraft,
   type MessageRequestKind,
@@ -156,6 +157,20 @@ function removeSessionKey<T>(current: Record<string, T>, sessionId: string) {
   return rest;
 }
 
+function summarizeMessageState(messages: ChatMessage[]) {
+  return messages.map((message) => {
+    const text = message.parts
+      .filter((part) => part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text as string)
+      .join("")
+      .slice(0, 24);
+    const flags = [message.isPending ? "pending" : null, message.deliveryError ? "error" : null]
+      .filter(Boolean)
+      .join(",");
+    return `${message.id}:${message.role}${flags ? `(${flags})` : ""}${text ? `:${text}` : ""}`;
+  }).join(" | ");
+}
+
 function App() {
   const [config, setConfig] = useState<ServerConfig>(() => loadServerConfig());
   const [connectStatus, setConnectStatus] = useState("尚未连接");
@@ -204,6 +219,7 @@ function App() {
   const configRef = useRef(config);
   const sessionsRef = useRef<Session[]>(sessions);
   const preparingSendRef = useRef<Record<string, true>>({});
+  const traceSeqRef = useRef(0);
   const messageRequestSeqRef = useRef<Record<string, Record<MessageRequestKind, number>>>({});
   const remoteConfigRequestSeqRef = useRef(0);
   const modelProvidersRequestSeqRef = useRef(0);
@@ -232,6 +248,18 @@ function App() {
   permissionRequestsBySessionRef.current = permissionRequestsBySession;
   questionRequestsBySessionRef.current = questionRequestsBySession;
   knownSessionIdsRef.current = sessions.map((session) => session.id);
+
+  const traceMessageFlow = useCallback((label: string, sessionId: string, details: Record<string, unknown> = {}) => {
+    traceSeqRef.current += 1;
+    const sessionMessages = messagesBySession[sessionId] || [];
+    const summary = summarizeMessageState(sessionMessages);
+    const extras = Object.entries(details)
+      .filter(([, value]) => value !== undefined && value !== null && value !== "")
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join(" ");
+    const line = `[trace ${traceSeqRef.current}] ${label} session=${sessionId}${extras ? ` ${extras}` : ""} messages=${summary || "<empty>"}`;
+    setEvents((current) => [line, ...current].slice(0, 40));
+  }, [messagesBySession]);
 
   const selectedSessionStatus = selectedSessionId ? statusMap[selectedSessionId] : undefined;
   const isSessionBusy = selectedSessionStatus === "busy";
@@ -338,6 +366,10 @@ function App() {
 
     const failedDraft = lastSentDraftBySession[selectedSessionId];
     const sessionMessages = messagesBySession[selectedSessionId] || [];
+    if (shouldDiscardFailedDraft(failedDraft, sessionMessages)) {
+      setLastSentDraftBySession((current) => removeSessionKey(current, selectedSessionId));
+      return;
+    }
     if (!shouldRestoreFailedDraft(failedDraft, sessionMessages, draft)) return;
 
     setDraft((current) => (current.trim() ? current : failedDraft.text));
@@ -365,6 +397,11 @@ function App() {
     if (!isSameServerConfig(configRef.current, targetConfig)) return;
 
     const mapped = page.items.map(mapMessageEnvelope);
+    traceMessageFlow("refreshMessages.before", sessionId, {
+      kind,
+      fetched: mapped.map((message) => message.id).join(","),
+      optimistic: inFlightOptimisticMessageBySessionRef.current[sessionId],
+    });
     setMessagesBySession((current) => {
       const sessionRevert = sessionsRef.current.find((session) => session.id === sessionId)?.revert;
       const merged = options?.appendOlder
@@ -380,8 +417,11 @@ function App() {
         [sessionId]: applyRevertCleanup(merged, sessionRevert),
       };
     });
+    window.setTimeout(() => {
+      traceMessageFlow("refreshMessages.after", sessionId, { kind });
+    }, 0);
     setMessagesNextCursorBySession((current) => setSessionCursor(current, sessionId, page.nextCursor));
-  }, []);
+  }, [traceMessageFlow]);
 
   const handleLoadOlderMessages = useCallback(async () => {
     if (!selectedSessionId || !messagesNextCursor || isLoadingOlderMessages) return;
@@ -790,6 +830,7 @@ function App() {
 
       const revertedSession = await opencodeApi.revertSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
       setSessions((current) => upsertSession(current, revertedSession));
+      setLastSentDraftBySession((current) => removeSessionKey(current, selectedSessionId));
       setMessagesBySession((current) => ({
         ...current,
         [selectedSessionId]: applyRevertCleanup(current[selectedSessionId] || [], revertedSession.revert),
@@ -932,6 +973,10 @@ function App() {
       inFlightSessionsRef.current.add(item.sessionId);
       inFlightOptimisticMessageBySessionRef.current[item.sessionId] = item.optimisticMessageId;
       setInFlightSessions((current) => ({ ...current, [item.sessionId]: true }));
+      traceMessageFlow("send.dispatch", item.sessionId, {
+        optimistic: item.optimisticMessageId,
+        text: item.text.slice(0, 24),
+      });
 
       try {
         const requestModel = item.model ? splitProviderModel(item.model) || undefined : undefined;
@@ -942,14 +987,20 @@ function App() {
           parts: [{ type: "text", text: item.text }],
         });
 
+        const mappedSentMessage = mapMessageEnvelope(sentMessage);
         setMessagesBySession((current) => ({
           ...current,
           [item.sessionId]: confirmOptimisticMessage(
             current[item.sessionId] || [],
             item.optimisticMessageId,
-            mapMessageEnvelope(sentMessage),
+            mappedSentMessage,
           ),
         }));
+        delete inFlightOptimisticMessageBySessionRef.current[item.sessionId];
+        traceMessageFlow("send.confirm", item.sessionId, {
+          optimistic: item.optimisticMessageId,
+          confirmed: mappedSentMessage.id,
+        });
         setLastSentDraftBySession((current) => removeSessionKey(current, item.sessionId));
 
         setQueuedMessagesBySession((current) => {
@@ -980,6 +1031,10 @@ function App() {
           return { ...current, [item.sessionId]: nextSessionQueue };
         });
         const message = error instanceof Error ? error.message : "send failed";
+        traceMessageFlow("send.error", item.sessionId, {
+          optimistic: item.optimisticMessageId,
+          error: message,
+        });
         setMessagesBySession((current) => ({
           ...current,
           [item.sessionId]: markMessageDeliveryFailed(
@@ -1003,11 +1058,16 @@ function App() {
         setEvents((current) => [`Queued send failed - ${message}`, ...current].slice(0, 20));
       } finally {
         inFlightSessionsRef.current.delete(item.sessionId);
-        delete inFlightOptimisticMessageBySessionRef.current[item.sessionId];
         setInFlightSessions((current) => removeSessionKey(current, item.sessionId));
+        window.setTimeout(() => {
+          traceMessageFlow("send.finally", item.sessionId, {
+            optimistic: item.optimisticMessageId,
+            trackedOptimistic: inFlightOptimisticMessageBySessionRef.current[item.sessionId],
+          });
+        }, 0);
       }
     },
-    [config, refreshDiff, refreshMessages, refreshSessions],
+    [config, refreshDiff, refreshSessions, traceMessageFlow],
   );
 
   useEffect(() => {
@@ -1246,6 +1306,11 @@ function App() {
                 const sessionID = info.sessionID;
                 const optimisticMessageId = inFlightOptimisticMessageBySessionRef.current[sessionID];
                 const shouldReplaceOptimistic = (info.role || "assistant") === "user" && Boolean(optimisticMessageId);
+                traceMessageFlow("sse.message.updated.before", sessionID, {
+                  optimistic: optimisticMessageId,
+                  incoming: info.id,
+                  role: info.role || "assistant",
+                });
                 setMessagesBySession((current) => ({
                   ...current,
                   [sessionID]: shouldReplaceOptimistic && optimisticMessageId
@@ -1253,6 +1318,12 @@ function App() {
                     : upsertMessageInfo(current[sessionID] || [], info),
                 }));
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
+                window.setTimeout(() => {
+                  traceMessageFlow("sse.message.updated.after", sessionID, {
+                    optimistic: optimisticMessageId,
+                    incoming: info.id,
+                  });
+                }, 0);
               }
             }
 
@@ -1260,11 +1331,15 @@ function App() {
               const sessionID = properties.sessionID as string | undefined;
               const messageID = properties.messageID as string | undefined;
               if (sessionID && messageID) {
+                traceMessageFlow("sse.message.removed.before", sessionID, { messageID });
                 setMessagesBySession((current) => ({
                   ...current,
                   [sessionID]: removeMessageById(current[sessionID] || [], messageID),
                 }));
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
+                window.setTimeout(() => {
+                  traceMessageFlow("sse.message.removed.after", sessionID, { messageID });
+                }, 0);
               }
             }
 
@@ -1288,11 +1363,15 @@ function App() {
               const messageID = properties.messageID as string | undefined;
               const partID = properties.partID as string | undefined;
               if (sessionID && messageID && partID) {
+                traceMessageFlow("sse.message.part.removed.before", sessionID, { messageID, partID });
                 setMessagesBySession((current) => ({
                   ...current,
                   [sessionID]: removeMessagePart(current[sessionID] || [], messageID, partID),
                 }));
                 setSessionActivity((current) => markSessionActivity(current, sessionID));
+                window.setTimeout(() => {
+                  traceMessageFlow("sse.message.part.removed.after", sessionID, { messageID, partID });
+                }, 0);
               }
             }
 
