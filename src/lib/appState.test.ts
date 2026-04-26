@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ChatMessage } from "../types";
 import {
+  applyRevertCleanup,
   appendMessageDelta,
   confirmOptimisticMessage,
   getVisibleMessages,
@@ -10,6 +11,8 @@ import {
   normalizeSessionStatus,
   prependOlderMessages,
   replaceOptimisticMessageInfo,
+  removeMessageById,
+  removeMessagePart,
   sortMessages,
   upsertMessagesById,
 } from "./appState";
@@ -53,7 +56,7 @@ test("getVisibleMessages respects sorted revert boundary", () => {
       message("m-1", "first", { createdAt: 100 }),
       message("m-2", "second", { createdAt: 200 }),
     ],
-    "m-3",
+    { messageID: "m-3" },
   );
 
   assert.deepEqual(visible.map((item) => item.id), ["m-1", "m-2"]);
@@ -91,9 +94,80 @@ test("getVisibleMessages hides optimistic resend while revert boundary is still 
     message("local-1", "replacement", { createdAt: 300, isPending: true }),
   ];
 
-  const visible = getVisibleMessages(source, "m-2");
+  const visible = getVisibleMessages(source, { messageID: "m-2" });
 
   assert.deepEqual(visible.map((item) => item.id), ["m-1"]);
+});
+
+test("getVisibleMessages preserves parts before a reverted part boundary", () => {
+  const visible = getVisibleMessages(
+    [
+      {
+        id: "m-1",
+        role: "assistant",
+        timestampLabel: "10:00",
+        createdAt: 100,
+        parts: [
+          { id: "p-1", type: "text", text: "keep" },
+          { id: "p-2", type: "tool", text: "trim" },
+        ],
+      },
+    ],
+    { messageID: "m-1", partID: "p-2" },
+  );
+
+  assert.equal(visible.length, 1);
+  assert.deepEqual(visible[0].parts.map((part) => part.id), ["p-1"]);
+});
+
+test("applyRevertCleanup removes reverted messages from cached source", () => {
+  const current = [
+    message("m-1", "first", { createdAt: 100 }),
+    message("m-2", "second", { createdAt: 200 }),
+    message("local-1", "replacement", { createdAt: 300, isPending: true }),
+  ];
+
+  const next = applyRevertCleanup(current, { messageID: "m-2" });
+
+  assert.deepEqual(next.map((item) => item.id), ["m-1"]);
+});
+
+test("removeMessageById drops the targeted message", () => {
+  const next = removeMessageById([
+    message("m-1", "first"),
+    message("m-2", "second"),
+  ], "m-2");
+
+  assert.deepEqual(next.map((item) => item.id), ["m-1"]);
+});
+
+test("removeMessagePart drops only the targeted part", () => {
+  const next = removeMessagePart([
+    {
+      id: "m-1",
+      role: "assistant",
+      timestampLabel: "10:00",
+      parts: [
+        { id: "p-1", type: "text", text: "a" },
+        { id: "p-2", type: "tool", text: "b" },
+      ],
+    },
+  ], "m-1", "p-2");
+
+  assert.deepEqual(next[0].parts.map((part) => part.id), ["p-1"]);
+});
+
+test("removeMessagePart drops the whole message when no parts remain", () => {
+  const next = removeMessagePart([
+    {
+      id: "m-1",
+      role: "assistant",
+      timestampLabel: "10:00",
+      parts: [{ id: "p-1", type: "tool", text: "a" }],
+    },
+  ], "m-1", "p-1");
+
+  assert.deepEqual(next, []);
 });
 
 test("appendMessageDelta appends to existing non-text part fields", () => {

@@ -100,6 +100,33 @@ export function confirmOptimisticMessage(
   return sortMessages([...withoutOptimistic, { ...confirmedMessage, isPending: false, deliveryError: undefined }]);
 }
 
+function trimMessagePartsBeforePart(message: ChatMessage, partID?: string) {
+  if (!partID) return message;
+  const partIndex = message.parts.findIndex((part) => part.id === partID);
+  if (partIndex < 0) return message;
+  return {
+    ...message,
+    parts: message.parts.slice(0, partIndex),
+  };
+}
+
+export function applyRevertCleanup(current: ChatMessage[], revert?: Session["revert"] | null) {
+  if (!revert?.messageID) return sortMessages(current);
+
+  const sorted = sortMessages(current);
+  const revertIndex = sorted.findIndex((message) => message.id === revert.messageID);
+  if (revertIndex < 0) return sorted;
+
+  if (!revert.partID) {
+    return sorted.slice(0, revertIndex);
+  }
+
+  const boundary = trimMessagePartsBeforePart(sorted[revertIndex], revert.partID);
+  return boundary.parts.length > 0
+    ? [...sorted.slice(0, revertIndex), boundary]
+    : sorted.slice(0, revertIndex);
+}
+
 function getMessageText(message: ChatMessage) {
   return message.parts
     .filter((part) => part.type === "text" && typeof part.text === "string")
@@ -355,12 +382,33 @@ export function getLatestUserMessageTarget(messages: ChatMessage[]) {
   };
 }
 
-export function getVisibleMessages(messages: ChatMessage[], revertMessageID?: string | null) {
-  if (!revertMessageID) return messages;
+export function getVisibleMessages(messages: ChatMessage[], revert?: Session["revert"] | null) {
+  if (!revert?.messageID) return sortMessages(messages);
+
   const sorted = sortMessages(messages);
-  const revertIndex = sorted.findIndex((message) => message.id === revertMessageID);
+  const revertIndex = sorted.findIndex((message) => message.id === revert.messageID);
   if (revertIndex < 0) return sorted;
-  return sorted.slice(0, revertIndex);
+
+  if (!revert.partID) {
+    return sorted.slice(0, revertIndex);
+  }
+
+  const boundary = trimMessagePartsBeforePart(sorted[revertIndex], revert.partID);
+  return boundary.parts.length > 0
+    ? [...sorted.slice(0, revertIndex), boundary]
+    : sorted.slice(0, revertIndex);
+}
+
+export function removeMessageById(current: ChatMessage[], messageID: string) {
+  return current.filter((message) => message.id !== messageID);
+}
+
+export function removeMessagePart(current: ChatMessage[], messageID: string, partID: string) {
+  return current.flatMap((message) => {
+    if (message.id !== messageID) return [message];
+    const nextParts = message.parts.filter((part) => part.id !== partID);
+    return nextParts.length > 0 ? [{ ...message, parts: nextParts }] : [];
+  });
 }
 
 export function normalizeSessionStatus(status: unknown) {

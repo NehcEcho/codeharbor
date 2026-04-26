@@ -17,6 +17,7 @@ import {
   type MessageRequestKind,
 } from "./lib/appController";
 import {
+  applyRevertCleanup,
   appendMessageDelta,
   confirmOptimisticMessage,
   formatTimestamp,
@@ -28,6 +29,8 @@ import {
   normalizeBaseUrl,
   normalizeSessionStatus,
   prependOlderMessages,
+  removeMessageById,
+  removeMessagePart,
   replaceOptimisticMessageInfo,
   sortMessages,
   upsertMessagesById,
@@ -199,6 +202,8 @@ function App() {
   const connectionStateRef = useRef<ConnectionState>(connectionState);
   const knownSessionIdsRef = useRef<string[]>([]);
   const configRef = useRef(config);
+  const sessionsRef = useRef<Session[]>(sessions);
+  const preparingSendRef = useRef<Record<string, true>>({});
   const messageRequestSeqRef = useRef<Record<string, Record<MessageRequestKind, number>>>({});
   const remoteConfigRequestSeqRef = useRef(0);
   const modelProvidersRequestSeqRef = useRef(0);
@@ -223,6 +228,7 @@ function App() {
   selectedSessionIdRef.current = selectedSessionId;
   connectionStateRef.current = connectionState;
   configRef.current = config;
+  sessionsRef.current = sessions;
   permissionRequestsBySessionRef.current = permissionRequestsBySession;
   questionRequestsBySessionRef.current = questionRequestsBySession;
   knownSessionIdsRef.current = sessions.map((session) => session.id);
@@ -250,8 +256,8 @@ function App() {
   const selectedActivity = selectedSessionId ? sessionActivity[selectedSessionId] : undefined;
   const canRedoLastMessage = Boolean(selectedSession?.revert?.messageID);
   const visibleMessages = useMemo(
-    () => getVisibleMessages(messages, selectedSession?.revert?.messageID),
-    [messages, selectedSession?.revert?.messageID],
+    () => getVisibleMessages(messages, selectedSession?.revert),
+    [messages, selectedSession?.revert],
   );
   const latestUserMessageTarget = useMemo(() => getLatestUserMessageTarget(visibleMessages), [visibleMessages]);
   const isSessionStalled = Boolean(
@@ -277,7 +283,15 @@ function App() {
 
     setSessions(sorted);
     setStatusMap(nextStatusMap);
-    setMessagesBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setMessagesBySession((current) => {
+      const revertBySession = Object.fromEntries(sorted.map((session) => [session.id, session.revert]));
+      return Object.fromEntries(
+        Object.entries(pruneSessionRecord(current, validSessionIds)).map(([sessionId, sessionMessages]) => [
+          sessionId,
+          applyRevertCleanup(sessionMessages, revertBySession[sessionId]),
+        ]),
+      );
+    });
     setMessagesNextCursorBySession((current) => pruneSessionRecord(current, validSessionIds));
     setDiffCountBySession((current) => pruneSessionRecord(current, validSessionIds));
     setPermissionRequestsBySession((current) => pruneSessionRecord(current, validSessionIds));
@@ -302,12 +316,11 @@ function App() {
       Object.entries(inFlightOptimisticMessageBySessionRef.current).filter(([sessionId]) => validSessionIds.has(sessionId)),
     );
 
-    setSelectedSessionId((current) => {
-      if (current && sorted.some((session) => session.id === current)) {
-        return current;
-      }
-      return sorted[0]?.id || null;
-    });
+    const nextSelectedSessionId = selectedSessionIdRef.current && sorted.some((session) => session.id === selectedSessionIdRef.current)
+      ? selectedSessionIdRef.current
+      : sorted[0]?.id || null;
+    setSelectedSessionId(nextSelectedSessionId);
+    return nextSelectedSessionId;
   }, [config]);
 
   const resetSelectedSessionState = useCallback(() => {
@@ -352,16 +365,21 @@ function App() {
     if (!isSameServerConfig(configRef.current, targetConfig)) return;
 
     const mapped = page.items.map(mapMessageEnvelope);
-    setMessagesBySession((current) => ({
-      ...current,
-      [sessionId]: options?.appendOlder
+    setMessagesBySession((current) => {
+      const sessionRevert = sessionsRef.current.find((session) => session.id === sessionId)?.revert;
+      const merged = options?.appendOlder
         ? prependOlderMessages(current[sessionId] || [], mapped)
         : mergeFetchedMessages(
             current[sessionId] || [],
             mapped,
             inFlightOptimisticMessageBySessionRef.current[sessionId],
-          ),
-    }));
+          );
+
+      return {
+        ...current,
+        [sessionId]: applyRevertCleanup(merged, sessionRevert),
+      };
+    });
     setMessagesNextCursorBySession((current) => setSessionCursor(current, sessionId, page.nextCursor));
   }, []);
 
@@ -557,17 +575,18 @@ function App() {
   const handleRefreshCurrentSession = useCallback(async () => {
     if (isRefreshingSession) return;
 
+    const requestedSessionId = selectedSessionIdRef.current;
     setIsRefreshingSession(true);
     try {
       const targetConfig = configRef.current;
-      const refreshResults = await Promise.allSettled([
+    const refreshResults = await Promise.allSettled([
         refreshRemoteConfig(targetConfig),
         refreshCommands(targetConfig),
         refreshModelProviders(targetConfig),
         refreshSkills(targetConfig),
         refreshSessions(targetConfig),
       ]);
-      const sessionId = selectedSessionIdRef.current;
+      const sessionId = requestedSessionId;
       let sessionRefreshFailed = false;
       if (sessionId) {
         try {
@@ -693,21 +712,11 @@ function App() {
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!selectedSessionId || !text) return;
+    if (preparingSendRef.current[selectedSessionId]) return;
     if (isSessionSendLocked(preparingSendBySession, inFlightSessions, selectedSessionId)) return;
 
     const now = Date.now();
-    let revertMessageId = selectedSession?.revert?.messageID || null;
-    const shouldClearRevert = Boolean(revertMessageId);
     const optimisticMessageId = `local-${now}`;
-    const queueItem: QueuedMessage = {
-      id: `queue-${now}-${Math.random().toString(36).slice(2, 8)}`,
-      sessionId: selectedSessionId,
-      text,
-      agent: selectedAgent as "build" | "plan",
-      model: selectedModel,
-      optimisticMessageId,
-      createdAt: now,
-    };
     const optimisticMessage: ChatMessage = {
       id: optimisticMessageId,
       role: "user",
@@ -717,56 +726,55 @@ function App() {
       isPending: true,
     };
 
+    preparingSendRef.current[selectedSessionId] = true;
     setPreparingSendBySession((current) => ({ ...current, [selectedSessionId]: true }));
 
     try {
-      if (revertMessageId) {
-        await opencodeApi.unrevertSession(config, selectedSessionId);
-        revertMessageId = null;
-      }
-
-    setQueuedMessagesBySession((current) => ({
-      ...current,
-      [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
-    }));
-    setLastSentDraftBySession((current) => ({
-      ...current,
-      [selectedSessionId]: {
+      const queueItem: QueuedMessage = {
+        id: `queue-${now}-${Math.random().toString(36).slice(2, 8)}`,
+        sessionId: selectedSessionId,
         text,
         agent: selectedAgent as "build" | "plan",
         model: selectedModel,
         optimisticMessageId,
-      },
-    }));
+        createdAt: now,
+      };
+
+      setQueuedMessagesBySession((current) => ({
+        ...current,
+        [selectedSessionId]: [...(current[selectedSessionId] || []), queueItem],
+      }));
+      setLastSentDraftBySession((current) => ({
+        ...current,
+        [selectedSessionId]: {
+          text,
+          agent: selectedAgent as "build" | "plan",
+          model: selectedModel,
+          optimisticMessageId,
+        },
+      }));
       setMessagesBySession((current) => ({
         ...current,
-        [selectedSessionId]: [...getVisibleMessages(current[selectedSessionId] || [], revertMessageId), optimisticMessage],
+        [selectedSessionId]: [...(current[selectedSessionId] || []), optimisticMessage],
       }));
-    setDraft("");
-    setEvents((current) => {
-      const queueSize = queuedCount + 1;
-      const label = queueSize > 1 ? `Queued message ${queueSize} for session` : "Queued message for session";
-      return [label, ...current].slice(0, 20);
-    });
-    if (shouldClearRevert) {
-      setSessions((current) =>
-        current.map((session) =>
-          session.id === selectedSessionId
-            ? {
-                ...session,
-                revert: null,
-              }
-            : session,
-        ),
-      );
-    }
+      setDraft("");
+      setEvents((current) => {
+        const queueSize = queuedCount + 1;
+        const label = queueSize > 1 ? `Queued message ${queueSize} for session` : "Queued message for session";
+        return [label, ...current].slice(0, 20);
+      });
+      delete preparingSendRef.current[selectedSessionId];
+      setPreparingSendBySession((current) => removeSessionKey(current, selectedSessionId));
     } catch (error) {
       const message = error instanceof Error ? error.message : "send preparation failed";
       setEvents((current) => [`Send failed - ${message}`, ...current].slice(0, 20));
+      delete preparingSendRef.current[selectedSessionId];
+      setPreparingSendBySession((current) => removeSessionKey(current, selectedSessionId));
     } finally {
+      delete preparingSendRef.current[selectedSessionId];
       setPreparingSendBySession((current) => removeSessionKey(current, selectedSessionId));
     }
-  }, [config, draft, inFlightSessions, preparingSendBySession, queuedCount, selectedAgent, selectedModel, selectedSession, selectedSessionId]);
+  }, [draft, inFlightSessions, preparingSendBySession, queuedCount, selectedAgent, selectedModel, selectedSessionId]);
 
   const handleUndoLastMessage = useCallback(async () => {
     if (!selectedSessionId || !latestUserMessageTarget || undoingSessionId === selectedSessionId) return;
@@ -782,6 +790,10 @@ function App() {
 
       const revertedSession = await opencodeApi.revertSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
       setSessions((current) => upsertSession(current, revertedSession));
+      setMessagesBySession((current) => ({
+        ...current,
+        [selectedSessionId]: applyRevertCleanup(current[selectedSessionId] || [], revertedSession.revert),
+      }));
       setDraft(latestUserMessageTarget.text);
       setEvents((current) => [`Undid last message - ${selectedSessionId}`, ...current].slice(0, 20));
       await Promise.all([refreshSessions(), refreshSessionData(selectedSessionId)]);
@@ -954,7 +966,6 @@ function App() {
         setEvents((current) => [`Sent queued message - ${item.agent}`, ...current].slice(0, 20));
 
         void refreshSessions();
-        void refreshMessages({ sessionId: item.sessionId });
         void refreshDiff(item.sessionId);
       } catch (error) {
         setQueuedMessagesBySession((current) => {
@@ -1245,6 +1256,18 @@ function App() {
               }
             }
 
+            if (payloadType === "message.removed") {
+              const sessionID = properties.sessionID as string | undefined;
+              const messageID = properties.messageID as string | undefined;
+              if (sessionID && messageID) {
+                setMessagesBySession((current) => ({
+                  ...current,
+                  [sessionID]: removeMessageById(current[sessionID] || [], messageID),
+                }));
+                setSessionActivity((current) => markSessionActivity(current, sessionID));
+              }
+            }
+
             if (payloadType === "message.part.updated") {
               const part = properties.part as Record<string, unknown> | undefined;
               if (part?.sessionID) {
@@ -1257,6 +1280,19 @@ function App() {
               const partSessionID = typeof part?.sessionID === "string" ? part.sessionID : undefined;
               if (partSessionID) {
                 setSessionActivity((current) => markSessionActivity(current, partSessionID));
+              }
+            }
+
+            if (payloadType === "message.part.removed") {
+              const sessionID = properties.sessionID as string | undefined;
+              const messageID = properties.messageID as string | undefined;
+              const partID = properties.partID as string | undefined;
+              if (sessionID && messageID && partID) {
+                setMessagesBySession((current) => ({
+                  ...current,
+                  [sessionID]: removeMessagePart(current[sessionID] || [], messageID, partID),
+                }));
+                setSessionActivity((current) => markSessionActivity(current, sessionID));
               }
             }
 
@@ -1282,6 +1318,12 @@ function App() {
               const info = properties.info as Session | undefined;
               if (info?.id) {
                 setSessions((current) => upsertSession(current, info));
+                if (info.revert) {
+                  setMessagesBySession((current) => ({
+                    ...current,
+                    [info.id]: applyRevertCleanup(current[info.id] || [], info.revert),
+                  }));
+                }
               }
             }
 
