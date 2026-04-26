@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 SERVER_PORT="${OPENCODE_SERVER_PORT:-1656}"
 WEB_PORT="${CODEHARBOR_WEB_PORT:-1657}"
