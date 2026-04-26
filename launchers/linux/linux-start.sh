@@ -23,4 +23,4 @@ if [ ! -d "node_modules" ]; then
 fi
 
 chmod +x docs/deployment/start-manual.sh
-exec ./docs/deployment/start-manual.sh
+exec ./docs/deployment/start-manual.sh "$@"

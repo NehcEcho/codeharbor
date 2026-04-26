@@ -1,7 +1,7 @@
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import type { ServerConfig, SkillItem } from "../../../types";
-import { BotIcon, ChevronDownIcon, FolderIcon, RefreshCwIcon, XIcon } from "./icons";
+import { BotIcon, ChevronDownIcon, FolderIcon, RefreshCwIcon, ServerIcon, XIcon } from "./icons";
 
 type ModelOption = {
   value: string;
@@ -29,10 +29,13 @@ export function SettingsPanel({
   skills,
   isLoadingSkills,
   skillsError,
+  serviceActionError,
   onModelChange,
   onCompactContext,
   isCompactingContext,
   canCompactContext,
+  onRestartService,
+  isRestartingService,
   onClose,
 }: {
   config: ServerConfig;
@@ -42,15 +45,19 @@ export function SettingsPanel({
   skills: SkillItem[];
   isLoadingSkills: boolean;
   skillsError: string | null;
+  serviceActionError: string | null;
   onModelChange: (model: string) => void;
   onCompactContext: () => void;
   isCompactingContext: boolean;
   canCompactContext: boolean;
+  onRestartService: (target: "opencode" | "web" | "stack") => void;
+  isRestartingService: boolean;
   onClose: () => void;
 }) {
   const [isModelsOpen, setIsModelsOpen] = useState(true);
   const [isContextOpen, setIsContextOpen] = useState(true);
   const [isSkillsOpen, setIsSkillsOpen] = useState(false);
+  const [isRestartMenuOpen, setIsRestartMenuOpen] = useState(false);
   const availableModelCount = modelOptions.length;
 
   useEffect(() => {
@@ -289,6 +296,73 @@ export function SettingsPanel({
                 )}
               </div>
             ) : null}
+          </section>
+
+          <section className="rounded-2xl border border-stone-200 bg-white px-4 py-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl border border-stone-200 bg-stone-50 p-2 text-stone-700">
+                <ServerIcon className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-sm font-medium text-stone-900">重启服务</h3>
+                <p className="mt-1 text-xs leading-5 text-stone-500">
+                  位于 Skills 区块下方，用于从当前 Web UI 触发服务器上的重启脚本。
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsRestartMenuOpen((current) => !current)}
+              className="mt-4 flex w-full items-center justify-between gap-2 rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-800 transition-colors hover:border-stone-300 hover:bg-stone-50"
+            >
+              <span className="flex items-center gap-2">
+                <RefreshCwIcon className={`h-4 w-4 ${isRestartingService ? "animate-spin" : ""}`} />
+                {isRestartingService ? "正在请求重启..." : "展开重启选项"}
+              </span>
+              <ChevronDownIcon className={`h-4 w-4 text-stone-400 transition-transform ${isRestartMenuOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {isRestartMenuOpen ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => onRestartService("opencode")}
+                  disabled={isRestartingService}
+                  className={`rounded-xl px-3 py-3 text-sm font-medium transition-colors ${
+                    isRestartingService ? "bg-stone-100 text-stone-400" : "bg-stone-900 text-white hover:bg-stone-800"
+                  }`}
+                >
+                  重启 OpenCode
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRestartService("web")}
+                  disabled={isRestartingService}
+                  className={`rounded-xl px-3 py-3 text-sm font-medium transition-colors ${
+                    isRestartingService ? "bg-stone-100 text-stone-400" : "bg-stone-200 text-stone-800 hover:bg-stone-300"
+                  }`}
+                >
+                  重启 Web UI
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRestartService("stack")}
+                  disabled={isRestartingService}
+                  className={`rounded-xl px-3 py-3 text-sm font-medium transition-colors ${
+                    isRestartingService ? "bg-stone-100 text-stone-400" : "bg-stone-200 text-stone-800 hover:bg-stone-300"
+                  }`}
+                >
+                  重启全部
+                </button>
+              </div>
+            ) : null}
+
+            <p className="mt-3 text-[11px] text-stone-400">
+              展开后可分别重启 OpenCode、Web UI 或整套服务；会按当前服务器系统自动调用对应脚本。
+            </p>
+
+            {serviceActionError ? <p className="mt-2 text-xs text-rose-600">{serviceActionError}</p> : null}
           </section>
         </div>
       </motion.aside>

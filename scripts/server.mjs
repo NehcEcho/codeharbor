@@ -2,6 +2,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,6 +13,7 @@ const PORT = Number(process.env.PORT || 1657);
 const DIST_DIR = path.join(__dirname, "..", "dist");
 const INDEX_HTML = path.join(DIST_DIR, "index.html");
 const PROXY_PREFIX = "/api/opencode";
+const CONTROL_PREFIX = "/api/control";
 
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -53,6 +55,13 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function readJsonBody(req) {
+  return readRequestBody(req).then((buffer) => {
+    if (!buffer.length) return {};
+    return JSON.parse(buffer.toString("utf8"));
+  });
+}
+
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -86,6 +95,66 @@ function createUpstreamHeaders(req, username, password) {
     headers.set("Content-Type", req.headers["content-type"]);
   }
   return headers;
+}
+
+function resolveRestartCommand(platform) {
+  if (platform === "win32") {
+    return {
+      command: "cmd.exe",
+      args: ["/c", path.join(__dirname, "..", "launchers", "windows", "windows-restart.cmd")],
+    };
+  }
+
+  return {
+    command: "/bin/sh",
+    args: [path.join(__dirname, "..", "launchers", "linux", "linux-restart.sh")],
+  };
+}
+
+function normalizeRestartTarget(value) {
+  if (value === "opencode" || value === "web" || value === "stack") return value;
+  return "stack";
+}
+
+function resolveScriptTarget(value) {
+  return value === "stack" ? "stack" : value;
+}
+
+async function handleControlRequest(req, res) {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed" });
+    return;
+  }
+
+  const route = req.url.startsWith(CONTROL_PREFIX) ? req.url.slice(CONTROL_PREFIX.length) || "/" : req.url;
+  if (route !== "/restart-service") {
+    sendJson(res, 404, { error: "Not found" });
+    return;
+  }
+
+  const password = req.headers["x-opencode-password"];
+  const configuredPassword = process.env.OPENCODE_SERVER_PASSWORD || "opencode-demo-4096";
+  if (typeof password !== "string" || password !== configuredPassword) {
+    sendJson(res, 403, { error: "Forbidden" });
+    return;
+  }
+
+  try {
+    const body = await readJsonBody(req);
+    const target = normalizeRestartTarget(body?.target);
+    const runner = resolveRestartCommand(process.platform);
+    const child = spawn(runner.command, [...runner.args, resolveScriptTarget(target)], {
+      cwd: path.join(__dirname, ".."),
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    sendJson(res, 202, { ok: true, target });
+  } catch (error) {
+    sendJson(res, 500, {
+      error: error instanceof Error ? error.message : "Failed to restart service",
+    });
+  }
 }
 
 async function proxyOpencodeRequest(req, res) {
@@ -180,6 +249,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url.startsWith(PROXY_PREFIX)) {
     await proxyOpencodeRequest(req, res);
+    return;
+  }
+
+  if (req.url.startsWith(CONTROL_PREFIX)) {
+    await handleControlRequest(req, res);
     return;
   }
 

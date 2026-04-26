@@ -32,6 +32,7 @@ export function MainLayout({
   skills,
   isLoadingSkills,
   skillsError,
+  serviceActionError,
   connectStatus,
   connectionState,
   isConnecting,
@@ -67,6 +68,8 @@ export function MainLayout({
   onCompactContext,
   isCompactingContext,
   canCompactContext,
+  onRestartService,
+  isRestartingService,
   onConnect,
   onSessionSelect,
   onCreateSession,
@@ -96,6 +99,7 @@ export function MainLayout({
   skills: SkillItem[];
   isLoadingSkills: boolean;
   skillsError: string | null;
+  serviceActionError: string | null;
   connectStatus: string;
   connectionState: ConnectionState;
   isConnecting: boolean;
@@ -131,6 +135,8 @@ export function MainLayout({
   onCompactContext: () => void;
   isCompactingContext: boolean;
   canCompactContext: boolean;
+  onRestartService: (target: "opencode" | "web" | "stack") => void;
+  isRestartingService: boolean;
   onConnect: () => void;
   onSessionSelect: (sessionId: string) => void;
   onCreateSession: () => void;
@@ -214,10 +220,13 @@ export function MainLayout({
             skills={skills}
             isLoadingSkills={isLoadingSkills}
             skillsError={skillsError}
+            serviceActionError={serviceActionError}
             onModelChange={onModelChange}
             onCompactContext={onCompactContext}
             isCompactingContext={isCompactingContext}
             canCompactContext={canCompactContext}
+            onRestartService={onRestartService}
+            isRestartingService={isRestartingService}
             onClose={() => setIsSettingsOpen(false)}
           />
         ) : null}

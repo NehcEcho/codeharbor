@@ -17,6 +17,7 @@ import type {
 } from "../types";
 
 const PROXY_BASE = "/api/opencode";
+const CONTROL_BASE = "/api/control";
 
 function trimTrailingSlash(value: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -56,8 +57,9 @@ async function request<T>(
   config: ServerConfig,
   path: string,
   init?: RequestInit,
+  base = PROXY_BASE,
 ): Promise<T> {
-  const response = await fetch(`${PROXY_BASE}${path}`, {
+  const response = await fetch(`${base}${path}`, {
     ...init,
     headers: withAuthHeaders(config, init?.headers),
   });
@@ -332,6 +334,13 @@ export const opencodeApi = {
 
   listSkills(config: ServerConfig) {
     return request<SkillItem[]>(config, "/skill");
+  },
+
+  restartService(config: ServerConfig, target: "opencode" | "web" | "stack" = "stack") {
+    return request<{ ok: boolean; target: "opencode" | "web" | "stack" }>(config, "/restart-service", {
+      method: "POST",
+      body: JSON.stringify({ target }),
+    }, CONTROL_BASE);
   },
 
   replyQuestion(config: ServerConfig, requestId: string, answers: string[][]) {

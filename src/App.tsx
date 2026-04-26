@@ -197,6 +197,8 @@ function App() {
   const [skills, setSkills] = useState<SkillItem[]>([]);
   const [isLoadingSkills, setIsLoadingSkills] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [serviceActionError, setServiceActionError] = useState<string | null>(null);
+  const [isRestartingService, setIsRestartingService] = useState(false);
   const [runningCommandName, setRunningCommandName] = useState<string | null>(null);
   const [permissionRequestsBySession, setPermissionRequestsBySession] = useState<Record<string, PermissionRequest[]>>({});
   const [respondingPermissionId, setRespondingPermissionId] = useState<string | null>(null);
@@ -927,6 +929,24 @@ function App() {
       setRunningCommandName(null);
     }
   }, [config, modelProviders, providerDefaults, refreshSessionData, refreshSessions, runningCommandName, selectedModel, selectedSessionId]);
+
+  const handleRestartService = useCallback(async (target: "opencode" | "web" | "stack") => {
+    if (isRestartingService) return;
+
+    setServiceActionError(null);
+    setIsRestartingService(true);
+
+    try {
+      await opencodeApi.restartService(config, target);
+      setEvents((current) => [`Service restart requested - ${target}`, ...current].slice(0, 20));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "service restart failed";
+      setServiceActionError(message);
+      setEvents((current) => [`Service restart failed - ${message}`, ...current].slice(0, 20));
+    } finally {
+      setIsRestartingService(false);
+    }
+  }, [config, isRestartingService]);
 
   const handleRunCommand = useCallback(
     async (commandName: string, argumentsText: string) => {
@@ -1676,6 +1696,7 @@ function App() {
       skills={skills}
       isLoadingSkills={isLoadingSkills}
       skillsError={skillsError}
+      serviceActionError={serviceActionError}
       connectStatus={connectStatus}
       connectionState={connectionState}
       isConnecting={isConnecting}
@@ -1711,6 +1732,8 @@ function App() {
       onCompactContext={() => void handleCompactContext()}
       isCompactingContext={runningCommandName === "compact"}
       canCompactContext={Boolean(selectedSessionId)}
+      onRestartService={(target) => void handleRestartService(target)}
+      isRestartingService={isRestartingService}
       onConnect={handleConnect}
       onSessionSelect={handleSessionSelect}
       onCreateSession={handleCreateSession}
