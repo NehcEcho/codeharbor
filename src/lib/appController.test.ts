@@ -9,15 +9,20 @@ import {
   getSessionCursor,
   isLatestSessionRequest,
   isLatestSessionMessageRequest,
+  isSessionSendLocked,
   isSessionAwaitingCompletion,
   nextSessionRequestSeq,
   nextSessionMessageRequestSeq,
   pruneSessionRecord,
+  pruneSessionRecordPreserving,
   setSessionCursor,
-  shouldBlockDuplicateSend,
-  shouldClearSendSubmissionGuard,
   shouldRestoreFailedDraft,
 } from "./appController";
+
+function removeSessionKey<T>(current: Record<string, T>, sessionId: string) {
+  const { [sessionId]: _removed, ...rest } = current;
+  return rest;
+}
 
 test("stores message cursors per session instead of a shared global slot", () => {
   let cursors: Record<string, string | null> = {};
@@ -148,37 +153,63 @@ test("pruneSessionRecord drops ghost session cache entries", () => {
   });
 });
 
+test("pruneSessionRecordPreserving keeps active send locks during transient session list gaps", () => {
+  const current = {
+    "session-a": true,
+    "session-b": true,
+  };
+
+  assert.deepEqual(pruneSessionRecordPreserving(current, ["session-b"], ["session-a"]), {
+    "session-a": true,
+    "session-b": true,
+  });
+});
+
 test("failed draft restore only repopulates text when the user is not already editing", () => {
-  const failedDraft = { text: "retry this", agent: "plan", model: "provider/model" };
+  const failedDraft = {
+    text: "retry this",
+    agent: "plan",
+    model: "provider/model",
+    optimisticMessageId: "local-1",
+  };
 
   assert.equal(
-    shouldRestoreFailedDraft(failedDraft, [{ deliveryError: "send failed" }], ""),
+    shouldRestoreFailedDraft(failedDraft, [{ id: "local-1", deliveryError: "send failed" }], ""),
     true,
   );
   assert.equal(
-    shouldRestoreFailedDraft(failedDraft, [{ deliveryError: "send failed" }], "already typing"),
+    shouldRestoreFailedDraft(failedDraft, [{ id: "local-1", deliveryError: "send failed" }], "already typing"),
     false,
   );
   assert.equal(
-    shouldRestoreFailedDraft(failedDraft, [{ deliveryError: undefined }], ""),
+    shouldRestoreFailedDraft(failedDraft, [{ id: "local-1", deliveryError: undefined }], ""),
     false,
   );
-  assert.equal(shouldRestoreFailedDraft(undefined, [{ deliveryError: "send failed" }], ""), false);
+  assert.equal(shouldRestoreFailedDraft(failedDraft, [{ id: "local-2", deliveryError: "send failed" }], ""), false);
+  assert.equal(shouldRestoreFailedDraft(undefined, [{ id: "local-1", deliveryError: "send failed" }], ""), false);
 });
 
-test("duplicate send guard blocks resubmitting the same draft for the same session", () => {
-  const guard = { sessionId: "session-a", text: "ship it" };
+test("failed draft restore can be cleared after the first repopulation", () => {
+  const failedDrafts = {
+    "session-a": { text: "retry this", agent: "plan", model: "provider/model", optimisticMessageId: "local-1" },
+  };
 
-  assert.equal(shouldBlockDuplicateSend(guard, "session-a", "ship it"), true);
-  assert.equal(shouldBlockDuplicateSend(guard, "session-a", "ship it again"), false);
-  assert.equal(shouldBlockDuplicateSend(guard, "session-b", "ship it"), false);
+  const shouldRestore = shouldRestoreFailedDraft(
+    failedDrafts["session-a"],
+    [{ id: "local-1", deliveryError: "send failed" }],
+    "",
+  );
+  assert.equal(shouldRestore, true);
+
+  const cleared = removeSessionKey(failedDrafts, "session-a");
+  assert.deepEqual(cleared, {});
+  assert.equal(shouldRestoreFailedDraft(cleared["session-a"], [{ id: "local-1", deliveryError: "send failed" }], ""), false);
 });
 
-test("duplicate send guard clears when session or draft changes", () => {
-  const guard = { sessionId: "session-a", text: "ship it" };
-
-  assert.equal(shouldClearSendSubmissionGuard(guard, "session-a", "ship it"), false);
-  assert.equal(shouldClearSendSubmissionGuard(guard, "session-a", " ship it updated "), true);
-  assert.equal(shouldClearSendSubmissionGuard(guard, "session-b", "ship it"), true);
-  assert.equal(shouldClearSendSubmissionGuard(guard, null, "ship it"), true);
+test("session send lock covers both preparing and in-flight windows", () => {
+  assert.equal(isSessionSendLocked({}, {}, "session-a"), false);
+  assert.equal(isSessionSendLocked({ "session-a": true }, {}, "session-a"), true);
+  assert.equal(isSessionSendLocked({}, { "session-a": true }, "session-a"), true);
+  assert.equal(isSessionSendLocked({ "session-b": true }, { "session-c": true }, "session-a"), false);
 });
+

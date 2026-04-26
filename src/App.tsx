@@ -10,12 +10,11 @@ import {
   nextSessionRequestSeq,
   nextSessionMessageRequestSeq,
   pruneSessionRecord,
+  pruneSessionRecordPreserving,
   setSessionCursor,
-  shouldBlockDuplicateSend,
-  shouldClearSendSubmissionGuard,
+  isSessionSendLocked,
   shouldRestoreFailedDraft,
   type MessageRequestKind,
-  type SendSubmissionGuard,
 } from "./lib/appController";
 import {
   appendMessageDelta,
@@ -25,6 +24,7 @@ import {
   getVisibleMessages,
   mapMessageEnvelope,
   markMessageDeliveryFailed,
+  mergeFetchedMessages,
   normalizeBaseUrl,
   normalizeSessionStatus,
   prependOlderMessages,
@@ -72,6 +72,7 @@ type SentMessageDraft = {
   text: string;
   agent: "build" | "plan";
   model: string;
+  optimisticMessageId?: string;
 };
 
 type SessionActionTarget = {
@@ -99,6 +100,10 @@ function markSessionActivity(current: SessionActivityMap, sessionID: string, tim
       lastActivityAt: timestamp,
     },
   };
+}
+
+function isSameServerConfig(left: ServerConfig, right: ServerConfig) {
+  return left.baseUrl === right.baseUrl && left.username === right.username && left.password === right.password;
 }
 
 function normalizeModelValue(model: string, providers: ConfigProvider[]) {
@@ -161,8 +166,6 @@ function App() {
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [draft, setDraft] = useState("");
   const [selectedAgent, setSelectedAgent] = useState("build");
-  const [isSending, setIsSending] = useState(false);
-  const [sendSubmissionGuard, setSendSubmissionGuard] = useState<SendSubmissionGuard | null>(null);
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [diffCountBySession, setDiffCountBySession] = useState<Record<string, number>>({});
   const [events, setEvents] = useState<string[]>([]);
@@ -183,6 +186,7 @@ function App() {
   const [sessionActivity, setSessionActivity] = useState<SessionActivityMap>({});
   const [lastSentDraftBySession, setLastSentDraftBySession] = useState<Record<string, SentMessageDraft>>({});
   const [queuedMessagesBySession, setQueuedMessagesBySession] = useState<Record<string, QueuedMessage[]>>({});
+  const [preparingSendBySession, setPreparingSendBySession] = useState<Record<string, true>>({});
   const [inFlightSessions, setInFlightSessions] = useState<Record<string, true>>({});
   const [awaitingSessionCompletionBySession, setAwaitingSessionCompletionBySession] = useState<Record<string, AwaitingSessionCompletion>>({});
   const [undoingSessionId, setUndoingSessionId] = useState<string | null>(null);
@@ -192,11 +196,15 @@ function App() {
   const refreshTimeoutsRef = useRef<Record<string, number>>({});
   const reconnectTimeoutRef = useRef<number | null>(null);
   const selectedSessionIdRef = useRef<string | null>(null);
+  const connectionStateRef = useRef<ConnectionState>(connectionState);
   const knownSessionIdsRef = useRef<string[]>([]);
   const configRef = useRef(config);
   const messageRequestSeqRef = useRef<Record<string, Record<MessageRequestKind, number>>>({});
   const remoteConfigRequestSeqRef = useRef(0);
   const modelProvidersRequestSeqRef = useRef(0);
+  const sessionsRequestSeqRef = useRef(0);
+  const commandsRequestSeqRef = useRef(0);
+  const skillsRequestSeqRef = useRef(0);
   const diffRequestSeqRef = useRef<Record<string, number>>({});
   const questionsRequestSeqRef = useRef<Record<string, number>>({});
   const permissionsRequestSeqRef = useRef<Record<string, number>>({});
@@ -213,6 +221,7 @@ function App() {
   );
 
   selectedSessionIdRef.current = selectedSessionId;
+  connectionStateRef.current = connectionState;
   configRef.current = config;
   permissionRequestsBySessionRef.current = permissionRequestsBySession;
   questionRequestsBySessionRef.current = questionRequestsBySession;
@@ -220,9 +229,16 @@ function App() {
 
   const selectedSessionStatus = selectedSessionId ? statusMap[selectedSessionId] : undefined;
   const isSessionBusy = selectedSessionStatus === "busy";
+  const busySessionIds = useMemo(
+    () => Object.entries(statusMap).filter(([, status]) => status === "busy").map(([sessionId]) => sessionId),
+    [statusMap],
+  );
   const queuedMessages = selectedSessionId ? queuedMessagesBySession[selectedSessionId] || [] : [];
   const queuedCount = queuedMessages.length;
   const messages = selectedSessionId ? messagesBySession[selectedSessionId] || [] : [];
+  const isPreparingSend = selectedSessionId ? Boolean(preparingSendBySession[selectedSessionId]) : false;
+  const isSending = selectedSessionId ? Boolean(inFlightSessions[selectedSessionId]) : false;
+  const isSendLocked = isSessionSendLocked(preparingSendBySession, inFlightSessions, selectedSessionId);
   const messagesNextCursor = useMemo(
     () => getSessionCursor(messagesNextCursorBySession, selectedSessionId),
     [messagesNextCursorBySession, selectedSessionId],
@@ -246,10 +262,14 @@ function App() {
   );
 
   const refreshSessions = useCallback(async (targetConfig: ServerConfig = config) => {
+    const requestSeq = ++sessionsRequestSeqRef.current;
     const [sessionList, nextStatusMap] = await Promise.all([
       opencodeApi.listSessions(targetConfig),
       opencodeApi.getSessionStatus(targetConfig),
     ]);
+    if (requestSeq !== sessionsRequestSeqRef.current) return;
+    if (!isSameServerConfig(configRef.current, targetConfig)) return;
+
     const sorted = [...sessionList].sort(
       (left, right) => (right.time?.updated || 0) - (left.time?.updated || 0),
     );
@@ -265,6 +285,9 @@ function App() {
     setSessionActivity((current) => pruneSessionRecord(current, validSessionIds));
     setLastSentDraftBySession((current) => pruneSessionRecord(current, validSessionIds));
     setQueuedMessagesBySession((current) => pruneSessionRecord(current, validSessionIds));
+    setPreparingSendBySession((current) =>
+      pruneSessionRecordPreserving(current, validSessionIds, Object.keys(current)),
+    );
     setInFlightSessions((current) => pruneSessionRecord(current, validSessionIds));
     setAwaitingSessionCompletionBySession((current) => pruneSessionRecord(current, validSessionIds));
 
@@ -305,18 +328,20 @@ function App() {
     if (!shouldRestoreFailedDraft(failedDraft, sessionMessages, draft)) return;
 
     setDraft((current) => (current.trim() ? current : failedDraft.text));
+    setLastSentDraftBySession((current) => removeSessionKey(current, selectedSessionId));
   }, [draft, lastSentDraftBySession, messagesBySession, selectedSessionId]);
 
-  const refreshMessages = useCallback(async (options?: { sessionId?: string; before?: string; appendOlder?: boolean; limit?: number }) => {
+  const refreshMessages = useCallback(async (options?: { sessionId?: string; before?: string; appendOlder?: boolean; limit?: number; targetConfig?: ServerConfig }) => {
     const sessionId = options?.sessionId ?? selectedSessionIdRef.current;
     if (!sessionId) return;
+    const targetConfig = options?.targetConfig ?? configRef.current;
 
     const kind: MessageRequestKind = options?.appendOlder ? "older" : "latest";
     const nextSeq = nextSessionMessageRequestSeq(messageRequestSeqRef.current, sessionId, kind);
     messageRequestSeqRef.current = nextSeq.nextState;
     const requestSeq = nextSeq.requestSeq;
 
-    const page: MessagePage = await opencodeApi.listMessages(config, sessionId, {
+    const page: MessagePage = await opencodeApi.listMessages(targetConfig, sessionId, {
       limit: options?.limit ?? INITIAL_MESSAGE_PAGE_SIZE,
       before: options?.before,
     });
@@ -324,16 +349,21 @@ function App() {
     if (!isLatestSessionMessageRequest(messageRequestSeqRef.current, sessionId, kind, requestSeq)) {
       return;
     }
+    if (!isSameServerConfig(configRef.current, targetConfig)) return;
 
     const mapped = page.items.map(mapMessageEnvelope);
     setMessagesBySession((current) => ({
       ...current,
       [sessionId]: options?.appendOlder
         ? prependOlderMessages(current[sessionId] || [], mapped)
-        : upsertMessagesById(current[sessionId] || [], mapped),
+        : mergeFetchedMessages(
+            current[sessionId] || [],
+            mapped,
+            inFlightOptimisticMessageBySessionRef.current[sessionId],
+          ),
     }));
     setMessagesNextCursorBySession((current) => setSessionCursor(current, sessionId, page.nextCursor));
-  }, [config]);
+  }, []);
 
   const handleLoadOlderMessages = useCallback(async () => {
     if (!selectedSessionId || !messagesNextCursor || isLoadingOlderMessages) return;
@@ -350,50 +380,53 @@ function App() {
     }
   }, [isLoadingOlderMessages, messagesNextCursor, refreshMessages, selectedSessionId]);
 
-  const refreshDiff = useCallback(async (sessionId = selectedSessionIdRef.current) => {
+  const refreshDiff = useCallback(async (sessionId = selectedSessionIdRef.current, targetConfig: ServerConfig = configRef.current) => {
     if (!sessionId) return;
 
     const nextSeq = nextSessionRequestSeq(diffRequestSeqRef.current, sessionId);
     diffRequestSeqRef.current = nextSeq.nextState;
     const requestSeq = nextSeq.requestSeq;
 
-    const diff = await opencodeApi.getDiff(config, sessionId);
+    const diff = await opencodeApi.getDiff(targetConfig, sessionId);
     if (!isLatestSessionRequest(diffRequestSeqRef.current, sessionId, requestSeq)) return;
+    if (!isSameServerConfig(configRef.current, targetConfig)) return;
     setDiffCountBySession((current) => ({ ...current, [sessionId]: diff.length }));
-  }, [config]);
+  }, []);
 
-  const refreshQuestions = useCallback(async (sessionId = selectedSessionIdRef.current) => {
+  const refreshQuestions = useCallback(async (sessionId = selectedSessionIdRef.current, targetConfig: ServerConfig = configRef.current) => {
     if (!sessionId) return;
     const requestSeq = (questionsRequestSeqRef.current[sessionId] || 0) + 1;
     questionsRequestSeqRef.current = { ...questionsRequestSeqRef.current, [sessionId]: requestSeq };
-    const requests = await opencodeApi.listQuestions(config);
+    const requests = await opencodeApi.listQuestions(targetConfig);
     if (requestSeq !== questionsRequestSeqRef.current[sessionId]) return;
+    if (!isSameServerConfig(configRef.current, targetConfig)) return;
     setQuestionRequestsBySession((current) => ({
       ...current,
       [sessionId]: requests.filter((item) => item.sessionID === sessionId),
     }));
-  }, [config]);
+  }, []);
 
-  const refreshPermissions = useCallback(async (sessionId = selectedSessionIdRef.current) => {
+  const refreshPermissions = useCallback(async (sessionId = selectedSessionIdRef.current, targetConfig: ServerConfig = configRef.current) => {
     if (!sessionId) return;
     const requestSeq = (permissionsRequestSeqRef.current[sessionId] || 0) + 1;
     permissionsRequestSeqRef.current = { ...permissionsRequestSeqRef.current, [sessionId]: requestSeq };
-    const requests = await opencodeApi.listPermissions(config);
+    const requests = await opencodeApi.listPermissions(targetConfig);
     if (requestSeq !== permissionsRequestSeqRef.current[sessionId]) return;
+    if (!isSameServerConfig(configRef.current, targetConfig)) return;
     setPermissionRequestsBySession((current) => ({
       ...current,
       [sessionId]: requests.filter((item) => item.sessionID === sessionId),
     }));
-  }, [config]);
+  }, []);
 
   const refreshSessionData = useCallback(
-    async (sessionId = selectedSessionIdRef.current) => {
+    async (sessionId = selectedSessionIdRef.current, targetConfig: ServerConfig = configRef.current) => {
       if (!sessionId) return;
       await Promise.all([
-        refreshMessages({ sessionId }),
-        refreshDiff(sessionId),
-        refreshPermissions(sessionId),
-        refreshQuestions(sessionId),
+        refreshMessages({ sessionId, targetConfig }),
+        refreshDiff(sessionId, targetConfig),
+        refreshPermissions(sessionId, targetConfig),
+        refreshQuestions(sessionId, targetConfig),
       ]);
     },
     [refreshDiff, refreshMessages, refreshPermissions, refreshQuestions],
@@ -460,9 +493,12 @@ function App() {
   }, []);
 
   const refreshCommands = useCallback(async (targetConfig: ServerConfig = configRef.current) => {
+    const requestSeq = ++commandsRequestSeqRef.current;
     if (!targetConfig.password) {
-      setCommands([]);
-      setCommandsError(null);
+      if (requestSeq === commandsRequestSeqRef.current && isSameServerConfig(configRef.current, targetConfig)) {
+        setCommands([]);
+        setCommandsError(null);
+      }
       return;
     }
 
@@ -470,21 +506,30 @@ function App() {
 
     try {
       const response = await opencodeApi.listCommands(targetConfig);
+      if (requestSeq !== commandsRequestSeqRef.current) return;
+      if (!isSameServerConfig(configRef.current, targetConfig)) return;
       setCommands(response.sort((left, right) => left.name.localeCompare(right.name)));
       setCommandsError(null);
     } catch (error) {
+      if (requestSeq !== commandsRequestSeqRef.current) return;
+      if (!isSameServerConfig(configRef.current, targetConfig)) return;
       const message = error instanceof Error ? error.message : "failed to load commands";
       setCommands([]);
       setCommandsError(`命令列表加载失败: ${message}`);
     } finally {
-      setIsLoadingCommands(false);
+      if (requestSeq === commandsRequestSeqRef.current) {
+        setIsLoadingCommands(false);
+      }
     }
   }, []);
 
   const refreshSkills = useCallback(async (targetConfig: ServerConfig = configRef.current) => {
+    const requestSeq = ++skillsRequestSeqRef.current;
     if (!targetConfig.password) {
-      setSkills([]);
-      setSkillsError(null);
+      if (requestSeq === skillsRequestSeqRef.current && isSameServerConfig(configRef.current, targetConfig)) {
+        setSkills([]);
+        setSkillsError(null);
+      }
       return;
     }
 
@@ -492,14 +537,20 @@ function App() {
 
     try {
       const response = await opencodeApi.listSkills(targetConfig);
+      if (requestSeq !== skillsRequestSeqRef.current) return;
+      if (!isSameServerConfig(configRef.current, targetConfig)) return;
       setSkills(response);
       setSkillsError(null);
     } catch (error) {
+      if (requestSeq !== skillsRequestSeqRef.current) return;
+      if (!isSameServerConfig(configRef.current, targetConfig)) return;
       const message = error instanceof Error ? error.message : "failed to load skills";
       setSkills([]);
       setSkillsError(`Skills 加载失败: ${message}`);
     } finally {
-      setIsLoadingSkills(false);
+      if (requestSeq === skillsRequestSeqRef.current) {
+        setIsLoadingSkills(false);
+      }
     }
   }, []);
 
@@ -509,7 +560,7 @@ function App() {
     setIsRefreshingSession(true);
     try {
       const targetConfig = configRef.current;
-      await Promise.allSettled([
+      const refreshResults = await Promise.allSettled([
         refreshRemoteConfig(targetConfig),
         refreshCommands(targetConfig),
         refreshModelProviders(targetConfig),
@@ -517,10 +568,21 @@ function App() {
         refreshSessions(targetConfig),
       ]);
       const sessionId = selectedSessionIdRef.current;
+      let sessionRefreshFailed = false;
       if (sessionId) {
-        await refreshSessionData(sessionId);
+        try {
+          await refreshSessionData(sessionId, targetConfig);
+        } catch {
+          sessionRefreshFailed = true;
+        }
       }
-      setEvents((current) => ["Manual refresh completed", ...current].slice(0, 20));
+      const failedRefreshes = refreshResults.filter((result) => result.status === "rejected");
+      const totalIssues = failedRefreshes.length + (sessionRefreshFailed ? 1 : 0);
+      if (totalIssues > 0) {
+        setEvents((current) => [`Manual refresh completed with ${totalIssues} issue(s)`, ...current].slice(0, 20));
+      } else {
+        setEvents((current) => ["Manual refresh completed", ...current].slice(0, 20));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "refresh failed";
       setEvents((current) => [`Manual refresh failed - ${message}`, ...current].slice(0, 20));
@@ -631,29 +693,11 @@ function App() {
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if (!selectedSessionId || !text) return;
-    if (shouldBlockDuplicateSend(sendSubmissionGuard, selectedSessionId, text)) return;
+    if (isSessionSendLocked(preparingSendBySession, inFlightSessions, selectedSessionId)) return;
 
     const now = Date.now();
-    const revertMessageId = selectedSession?.revert?.messageID;
-
-    setIsSending(true);
-
-    try {
-      if (revertMessageId) {
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === selectedSessionId
-              ? {
-                  ...session,
-                  revert: null,
-                }
-              : session,
-          ),
-        );
-        const restoredSession = await opencodeApi.unrevertSession(config, selectedSessionId);
-        setSessions((current) => upsertSession(current, restoredSession));
-      }
-
+    let revertMessageId = selectedSession?.revert?.messageID || null;
+    const shouldClearRevert = Boolean(revertMessageId);
     const optimisticMessageId = `local-${now}`;
     const queueItem: QueuedMessage = {
       id: `queue-${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -664,7 +708,6 @@ function App() {
       optimisticMessageId,
       createdAt: now,
     };
-
     const optimisticMessage: ChatMessage = {
       id: optimisticMessageId,
       role: "user",
@@ -674,7 +717,13 @@ function App() {
       isPending: true,
     };
 
-    setSendSubmissionGuard({ sessionId: selectedSessionId, text });
+    setPreparingSendBySession((current) => ({ ...current, [selectedSessionId]: true }));
+
+    try {
+      if (revertMessageId) {
+        await opencodeApi.unrevertSession(config, selectedSessionId);
+        revertMessageId = null;
+      }
 
     setQueuedMessagesBySession((current) => ({
       ...current,
@@ -686,30 +735,38 @@ function App() {
         text,
         agent: selectedAgent as "build" | "plan",
         model: selectedModel,
+        optimisticMessageId,
       },
     }));
-    setMessagesBySession((current) => ({
-      ...current,
-      [selectedSessionId]: [...getVisibleMessages(current[selectedSessionId] || [], revertMessageId), optimisticMessage],
-    }));
+      setMessagesBySession((current) => ({
+        ...current,
+        [selectedSessionId]: [...getVisibleMessages(current[selectedSessionId] || [], revertMessageId), optimisticMessage],
+      }));
     setDraft("");
     setEvents((current) => {
       const queueSize = queuedCount + 1;
       const label = queueSize > 1 ? `Queued message ${queueSize} for session` : "Queued message for session";
       return [label, ...current].slice(0, 20);
     });
+    if (shouldClearRevert) {
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === selectedSessionId
+            ? {
+                ...session,
+                revert: null,
+              }
+            : session,
+        ),
+      );
+    }
     } catch (error) {
       const message = error instanceof Error ? error.message : "send preparation failed";
       setEvents((current) => [`Send failed - ${message}`, ...current].slice(0, 20));
     } finally {
-      setIsSending(false);
+      setPreparingSendBySession((current) => removeSessionKey(current, selectedSessionId));
     }
-  }, [config, draft, queuedCount, selectedAgent, selectedModel, selectedSession, selectedSessionId, sendSubmissionGuard]);
-
-  useEffect(() => {
-    if (!shouldClearSendSubmissionGuard(sendSubmissionGuard, selectedSessionId, draft)) return;
-    setSendSubmissionGuard(null);
-  }, [draft, selectedSessionId, sendSubmissionGuard]);
+  }, [config, draft, inFlightSessions, preparingSendBySession, queuedCount, selectedAgent, selectedModel, selectedSession, selectedSessionId]);
 
   const handleUndoLastMessage = useCallback(async () => {
     if (!selectedSessionId || !latestUserMessageTarget || undoingSessionId === selectedSessionId) return;
@@ -723,7 +780,8 @@ function App() {
         setEvents((current) => [`Abort requested before undo - ${selectedSessionId}`, ...current].slice(0, 20));
       }
 
-      await opencodeApi.revertSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
+      const revertedSession = await opencodeApi.revertSession(config, selectedSessionId, { messageID: latestUserMessageTarget.id });
+      setSessions((current) => upsertSession(current, revertedSession));
       setDraft(latestUserMessageTarget.text);
       setEvents((current) => [`Undid last message - ${selectedSessionId}`, ...current].slice(0, 20));
       await Promise.all([refreshSessions(), refreshSessionData(selectedSessionId)]);
@@ -763,7 +821,8 @@ function App() {
     setRedoingSessionId(selectedSessionId);
 
     try {
-      await opencodeApi.unrevertSession(config, selectedSessionId);
+      const restoredSession = await opencodeApi.unrevertSession(config, selectedSessionId);
+      setSessions((current) => upsertSession(current, restoredSession));
       setDraft("");
       setEvents((current) => [`Redid reverted messages - ${selectedSessionId}`, ...current].slice(0, 20));
       await Promise.all([refreshSessions(), refreshSessionData(selectedSessionId)]);
@@ -785,7 +844,6 @@ function App() {
     }
 
     setRunningCommandName("compact");
-    setIsSending(true);
     setEvents((current) => ["Running command - /compact", ...current].slice(0, 20));
 
     try {
@@ -814,7 +872,6 @@ function App() {
       setEvents((current) => [`Compact failed - ${message}`, ...current].slice(0, 20));
     } finally {
       setRunningCommandName(null);
-      setIsSending(false);
     }
   }, [config, modelProviders, providerDefaults, refreshSessionData, refreshSessions, runningCommandName, selectedModel, selectedSessionId]);
 
@@ -823,7 +880,6 @@ function App() {
       if (!selectedSessionId || !commandName.trim() || runningCommandName) return;
 
       setRunningCommandName(commandName);
-      setIsSending(true);
       setEvents((current) => [`Running command - /${commandName} ${argumentsText}`.trim(), ...current].slice(0, 20));
 
       try {
@@ -854,7 +910,6 @@ function App() {
         setEvents((current) => [`Command failed - ${message}`, ...current].slice(0, 20));
       } finally {
         setRunningCommandName(null);
-        setIsSending(false);
       }
     },
     [config, refreshSessionData, refreshSessions, runningCommandName, selectedAgent, selectedModel, selectedSessionId],
@@ -865,7 +920,6 @@ function App() {
       inFlightSessionsRef.current.add(item.sessionId);
       inFlightOptimisticMessageBySessionRef.current[item.sessionId] = item.optimisticMessageId;
       setInFlightSessions((current) => ({ ...current, [item.sessionId]: true }));
-      setIsSending(item.sessionId === selectedSessionIdRef.current);
 
       try {
         const requestModel = item.model ? splitProviderModel(item.model) || undefined : undefined;
@@ -929,6 +983,7 @@ function App() {
             text: item.text,
             agent: item.agent,
             model: item.model,
+            optimisticMessageId: item.optimisticMessageId,
           },
         }));
         if (item.sessionId === selectedSessionIdRef.current) {
@@ -939,9 +994,6 @@ function App() {
         inFlightSessionsRef.current.delete(item.sessionId);
         delete inFlightOptimisticMessageBySessionRef.current[item.sessionId];
         setInFlightSessions((current) => removeSessionKey(current, item.sessionId));
-        if (item.sessionId === selectedSessionIdRef.current) {
-          setIsSending(false);
-        }
       }
     },
     [config, refreshDiff, refreshMessages, refreshSessions],
@@ -1127,6 +1179,7 @@ function App() {
   useEffect(() => {
     if (connectionState !== "success" || !config.password) return;
 
+    const streamConfig = config;
     const controller = new AbortController();
     let isDisposed = false;
 
@@ -1146,6 +1199,7 @@ function App() {
 
       refreshTimeoutsRef.current[refreshKey] = window.setTimeout(() => {
         delete refreshTimeoutsRef.current[refreshKey];
+        if (connectionStateRef.current !== "success") return;
         void refreshSessions();
         if (sessionId) {
           void refreshSessionData(sessionId);
@@ -1156,8 +1210,12 @@ function App() {
     const connectStream = () => {
       void opencodeApi
         .streamEvents(
-          config,
+          streamConfig,
           (event) => {
+            if (isDisposed || controller.signal.aborted) return;
+            if (connectionStateRef.current !== "success") return;
+            if (!isSameServerConfig(configRef.current, streamConfig)) return;
+
             reconnectAttemptRef.current = 0;
             const payload =
               event.data && typeof event.data === "object" && "type" in (event.data as Record<string, unknown>)
@@ -1358,10 +1416,12 @@ function App() {
               }
             }
 
-            setEvents((current) => {
-              const label = `${payloadType}${event.raw ? ` - ${String(event.raw).slice(0, 120)}` : ""}`;
-              return [label, ...current].slice(0, 20);
-            });
+            if (payloadType !== "session.idle" && payloadType !== "session.error") {
+              setEvents((current) => {
+                const label = `${payloadType}${event.raw ? ` - ${String(event.raw).slice(0, 120)}` : ""}`;
+                return [label, ...current].slice(0, 20);
+              });
+            }
 
             if (payloadType === "session.idle") {
               const sessionID = properties.sessionID as string | undefined;
@@ -1383,12 +1443,14 @@ function App() {
         )
         .catch((error) => {
           if (controller.signal.aborted || isDisposed) return;
+          if (!isSameServerConfig(configRef.current, streamConfig)) return;
           const message = error instanceof Error ? error.message : "stream unavailable";
           setEvents((current) => [`Event stream disconnected - ${message}`, ...current].slice(0, 20));
           clearReconnectTimer();
           reconnectAttemptRef.current += 1;
           const reconnectDelay = Math.min(1500 * 2 ** (reconnectAttemptRef.current - 1), 15000);
           reconnectTimeoutRef.current = window.setTimeout(() => {
+            if (connectionStateRef.current !== "success") return;
             void refreshSessions();
             for (const sessionId of knownSessionIdsRef.current) {
               void refreshSessionData(sessionId);
@@ -1412,21 +1474,23 @@ function App() {
   }, [config, connectionState, refreshSessionData, refreshSessions]);
 
   useEffect(() => {
-    if (!selectedSessionId || !config.password || !isSessionBusy) return;
+    if (connectionState !== "success" || !config.password || busySessionIds.length === 0) return;
 
     const interval = window.setInterval(() => {
-      void refreshMessages();
-      void refreshDiff();
       void refreshSessions();
-      void refreshPermissions();
-      void refreshQuestions();
+      for (const sessionId of busySessionIds) {
+        void refreshMessages({ sessionId });
+        void refreshDiff(sessionId);
+        void refreshPermissions(sessionId);
+        void refreshQuestions(sessionId);
+      }
     }, 3000);
 
     return () => window.clearInterval(interval);
-  }, [config.password, isSessionBusy, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions, selectedSessionId]);
+  }, [busySessionIds, config.password, connectionState, refreshDiff, refreshMessages, refreshPermissions, refreshQuestions, refreshSessions]);
 
   useEffect(() => {
-    if (!selectedSessionId || !config.password) return;
+    if (connectionState !== "success" || !selectedSessionId || !config.password) return;
 
     const interval = window.setInterval(() => {
       void refreshPermissions();
@@ -1434,10 +1498,10 @@ function App() {
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [config.password, refreshPermissions, refreshQuestions, selectedSessionId]);
+  }, [config.password, connectionState, refreshPermissions, refreshQuestions, selectedSessionId]);
 
   useEffect(() => {
-    if (!config.password) return;
+    if (connectionState !== "success" || !config.password) return;
 
     let timer: number | undefined;
     const poll = async () => {
@@ -1455,10 +1519,10 @@ function App() {
     return () => {
       if (timer) window.clearTimeout(timer);
     };
-  }, [config.password, refreshSessions]);
+  }, [config.password, connectionState, refreshSessions]);
 
   useEffect(() => {
-    if (!config.password) return;
+    if (connectionState !== "success" || !config.password) return;
 
     const interval = window.setInterval(async () => {
       try {
@@ -1476,7 +1540,7 @@ function App() {
     }, 20000);
 
     return () => window.clearInterval(interval);
-  }, [config]);
+  }, [config, connectionState]);
 
   return (
     <MainLayout
@@ -1503,7 +1567,9 @@ function App() {
       isLoadingOlderMessages={isLoadingOlderMessages}
       draft={draft}
       agent={selectedAgent as "build" | "plan"}
+      isPreparingSend={isPreparingSend}
       isSending={isSending}
+      isSendLocked={isSendLocked}
       queuedCount={queuedCount}
       isRefreshingSession={isRefreshingSession}
       isBusy={isSessionBusy}

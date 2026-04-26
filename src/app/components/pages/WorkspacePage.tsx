@@ -14,7 +14,9 @@ export function WorkspacePage({
   commands,
   isLoadingCommands,
   commandsError,
+  isPreparingSend,
   isSending,
+  isSendLocked,
   queuedCount,
   isBusy,
   isStalled,
@@ -45,7 +47,9 @@ export function WorkspacePage({
   commands: CommandItem[];
   isLoadingCommands: boolean;
   commandsError: string | null;
+  isPreparingSend: boolean;
   isSending: boolean;
+  isSendLocked: boolean;
   queuedCount: number;
   isBusy: boolean;
   isStalled: boolean;
@@ -181,7 +185,9 @@ export function WorkspacePage({
             commandsError={commandsError}
             agent={agent}
             onAgentChange={onAgentChange}
+            isPreparingSend={isPreparingSend}
             isSending={isSending}
+            isSendLocked={isSendLocked}
             queuedCount={queuedCount}
             isBusy={isBusy}
             canUndoLastMessage={canUndoLastMessage}

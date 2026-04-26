@@ -6,6 +6,7 @@ import {
   confirmOptimisticMessage,
   getVisibleMessages,
   mergeMessages,
+  mergeFetchedMessages,
   normalizeSessionStatus,
   prependOlderMessages,
   replaceOptimisticMessageInfo,
@@ -68,6 +69,19 @@ test("getVisibleMessages lets new optimistic messages show after revert boundary
   const visible = getVisibleMessages(source, null);
 
   assert.deepEqual(visible.map((item) => item.id), ["m-1", "m-2", "local-1"]);
+});
+
+test("getVisibleMessages keeps restored messages visible after unrevert clears the boundary", () => {
+  const source = [
+    message("m-1", "first", { createdAt: 100 }),
+    message("m-2", "second", { createdAt: 200 }),
+    message("m-3", "restored", { createdAt: 300 }),
+    message("local-1", "replacement", { createdAt: 400, isPending: true }),
+  ];
+
+  const visible = getVisibleMessages(source, null);
+
+  assert.deepEqual(visible.map((item) => item.id), ["m-1", "m-2", "m-3", "local-1"]);
 });
 
 test("getVisibleMessages hides optimistic resend while revert boundary is still active", () => {
@@ -217,6 +231,52 @@ test("replaceOptimisticMessageInfo does not replace non-user optimistic target",
   assert.deepEqual(next.map((item) => item.id), ["local-tool", "server-1"]);
   assert.equal(next.find((item) => item.id === "local-tool")?.role, "tool");
   assert.equal(next.find((item) => item.id === "server-1")?.role, "user");
+});
+
+test("mergeFetchedMessages upgrades matching optimistic user message during refresh", () => {
+  const current = [message("local-1", "same", { isPending: true, createdAt: 1_000 })];
+  const fetched = [message("server-1", "same", { createdAt: 1_005 })];
+
+  const next = mergeFetchedMessages(current, fetched, "local-1");
+
+  assert.deepEqual(next.map((item) => item.id), ["server-1"]);
+  assert.equal(next[0].isPending, false);
+});
+
+test("mergeFetchedMessages preserves unrelated optimistic messages during refresh", () => {
+  const current = [message("local-1", "first", { isPending: true, createdAt: 1_000 })];
+  const fetched = [message("server-1", "different", { createdAt: 1_005 })];
+
+  const next = mergeFetchedMessages(current, fetched, "local-1");
+
+  assert.deepEqual(next.map((item) => item.id), ["local-1", "server-1"]);
+  assert.equal(next.find((item) => item.id === "local-1")?.isPending, true);
+});
+
+test("mergeFetchedMessages does not collapse repeated identical optimistic messages without explicit target", () => {
+  const current = [
+    message("local-1", "continue", { isPending: true, createdAt: 1_000 }),
+    message("local-2", "continue", { isPending: true, createdAt: 2_000 }),
+  ];
+  const fetched = [message("server-2", "continue", { createdAt: 2_005 })];
+
+  const next = mergeFetchedMessages(current, fetched);
+
+  assert.deepEqual(next.map((item) => item.id), ["local-1", "local-2", "server-2"]);
+  assert.equal(next.filter((item) => item.isPending).length, 2);
+});
+
+test("mergeFetchedMessages does not replace targeted optimistic message when another pending message has identical text", () => {
+  const current = [
+    message("local-1", "continue", { isPending: true, createdAt: 1_000 }),
+    message("local-2", "continue", { isPending: true, createdAt: 2_000 }),
+  ];
+  const fetched = [message("server-2", "continue", { createdAt: 2_005 })];
+
+  const next = mergeFetchedMessages(current, fetched, "local-2");
+
+  assert.deepEqual(next.map((item) => item.id), ["local-1", "local-2", "server-2"]);
+  assert.equal(next.find((item) => item.id === "local-2")?.isPending, true);
 });
 
 test("prependOlderMessages keeps strict pagination order and ignores duplicates", () => {

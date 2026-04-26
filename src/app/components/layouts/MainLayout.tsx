@@ -44,7 +44,9 @@ export function MainLayout({
   isLoadingOlderMessages,
   draft,
   agent,
+  isPreparingSend,
   isSending,
+  isSendLocked,
   queuedCount,
   isRefreshingSession,
   isBusy,
@@ -106,7 +108,9 @@ export function MainLayout({
   isLoadingOlderMessages: boolean;
   draft: string;
   agent: "build" | "plan";
+  isPreparingSend: boolean;
   isSending: boolean;
+  isSendLocked: boolean;
   queuedCount: number;
   isRefreshingSession: boolean;
   isBusy: boolean;
@@ -275,7 +279,9 @@ export function MainLayout({
                 commands={commands}
                 isLoadingCommands={isLoadingCommands}
                 commandsError={commandsError}
+                isPreparingSend={isPreparingSend}
                 isSending={isSending}
+                isSendLocked={isSendLocked}
                 queuedCount={queuedCount}
                 isBusy={isBusy}
                 isStalled={isStalled}

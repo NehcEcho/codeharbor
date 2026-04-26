@@ -5,7 +5,9 @@ type ChatPanelProps = {
   messages: MessageEnvelope[];
   draft: string;
   selectedAgent: string;
+  isPreparingSend: boolean;
   isSending: boolean;
+  isSendLocked: boolean;
   onDraftChange: (value: string) => void;
   onAgentChange: (value: string) => void;
   onSend: () => void;
@@ -26,7 +28,9 @@ export function ChatPanel({
   messages,
   draft,
   selectedAgent,
+  isPreparingSend,
   isSending,
+  isSendLocked,
   onDraftChange,
   onAgentChange,
   onSend,
@@ -73,8 +77,8 @@ export function ChatPanel({
           rows={5}
         />
         <div className="composer-actions">
-          <button type="button" className="primary-button" onClick={onSend} disabled={isSending || !draft.trim()}>
-            {isSending ? "发送中..." : "发送任务"}
+          <button type="button" className="primary-button" onClick={onSend} disabled={isSendLocked || !draft.trim()}>
+            {isPreparingSend ? "准备中..." : isSending ? "发送中..." : "发送任务"}
           </button>
         </div>
       </div>

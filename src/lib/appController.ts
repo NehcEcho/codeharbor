@@ -8,17 +8,15 @@ export type SessionMessageRequestSeqMap = Record<string, Record<MessageRequestKi
 
 export type SessionRequestSeqMap = Record<string, number>;
 
+export type SessionFlagMap = Record<string, true>;
+
 export type AwaitingSessionCompletionMap = Record<string, { sessionId: string; seenBusy: boolean; startedAt: number }>;
 
 export type FailedDraftLike = {
   text: string;
   agent: string;
   model: string;
-};
-
-export type SendSubmissionGuard = {
-  sessionId: string;
-  text: string;
+  optimisticMessageId?: string;
 };
 
 export function getSessionCursor(cursors: SessionCursorMap, sessionId: string | null | undefined) {
@@ -78,6 +76,15 @@ export function isLatestSessionRequest(current: SessionRequestSeqMap, sessionId:
   return current[sessionId] === requestSeq;
 }
 
+export function isSessionSendLocked(
+  preparingBySession: SessionFlagMap,
+  inFlightBySession: SessionFlagMap,
+  sessionId: string | null | undefined,
+) {
+  if (!sessionId) return false;
+  return Boolean(preparingBySession[sessionId] || inFlightBySession[sessionId]);
+}
+
 export function pruneSessionRecord<T>(current: Record<string, T>, validSessionIds: Iterable<string>) {
   const valid = new Set(validSessionIds);
   const next: Record<string, T> = {};
@@ -91,31 +98,38 @@ export function pruneSessionRecord<T>(current: Record<string, T>, validSessionId
   return next;
 }
 
+export function pruneSessionRecordPreserving<T>(
+  current: Record<string, T>,
+  validSessionIds: Iterable<string>,
+  preservedSessionIds: Iterable<string>,
+) {
+  const keep = new Set(validSessionIds);
+  for (const sessionId of preservedSessionIds) {
+    keep.add(sessionId);
+  }
+
+  const next: Record<string, T> = {};
+  for (const [sessionId, value] of Object.entries(current)) {
+    if (keep.has(sessionId)) {
+      next[sessionId] = value;
+    }
+  }
+  return next;
+}
+
 export function shouldRestoreFailedDraft(
   failedDraft: FailedDraftLike | undefined,
-  messages: Array<{ deliveryError?: string }>,
+  messages: Array<{ id?: string; deliveryError?: string }>,
   currentDraft: string,
 ) {
   if (!failedDraft) return false;
   if (currentDraft.trim()) return false;
+  if (failedDraft.optimisticMessageId) {
+    return messages.some(
+      (message) => message.id === failedDraft.optimisticMessageId && Boolean(message.deliveryError),
+    );
+  }
   return messages.some((message) => Boolean(message.deliveryError));
-}
-
-export function shouldBlockDuplicateSend(
-  guard: SendSubmissionGuard | null | undefined,
-  sessionId: string,
-  text: string,
-) {
-  return guard?.sessionId === sessionId && guard.text === text;
-}
-
-export function shouldClearSendSubmissionGuard(
-  guard: SendSubmissionGuard | null | undefined,
-  sessionId: string | null,
-  draft: string,
-) {
-  if (!guard) return false;
-  return guard.sessionId !== sessionId || guard.text !== draft.trim();
 }
 
 export function getRequestSessionIdByQuestionId(requests: QuestionRequest[], id: string) {

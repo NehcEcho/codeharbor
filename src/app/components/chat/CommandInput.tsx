@@ -28,7 +28,9 @@ interface CommandInputProps {
   isLoadingCommands: boolean;
   commandsError: string | null;
   onAgentChange: (agent: "build" | "plan") => void;
+  isPreparingSend: boolean;
   isSending: boolean;
+  isSendLocked: boolean;
   queuedCount: number;
   isBusy: boolean;
   canUndoLastMessage: boolean;
@@ -53,7 +55,9 @@ export function CommandInput({
   isLoadingCommands,
   commandsError,
   onAgentChange,
+  isPreparingSend,
   isSending,
+  isSendLocked,
   queuedCount,
   isBusy,
   canUndoLastMessage,
@@ -86,7 +90,7 @@ export function CommandInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!value.trim() || isSending) return;
+      if (!value.trim() || isSendLocked) return;
       onSend();
     }
   };
@@ -99,7 +103,7 @@ export function CommandInput({
   });
 
   const handleRunCommandClick = () => {
-    if (!selectedCommandName || runningCommandName || isBusy || isSending) return;
+    if (!selectedCommandName || runningCommandName || isBusy || isSendLocked) return;
     onRunCommand(selectedCommandName, commandArguments.trim());
     setCommandArguments("");
     setCommandQuery("");
@@ -115,7 +119,9 @@ export function CommandInput({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
             placeholder={
-              isSending
+              isPreparingSend
+                ? "Preparing message..."
+                : isSending
                 ? "Sending message..."
                 : queuedCount > 0
                   ? `Queueing enabled. ${queuedCount} message${queuedCount === 1 ? "" : "s"} waiting...`
@@ -268,7 +274,7 @@ export function CommandInput({
                         <button
                           type="button"
                           onClick={handleRunCommandClick}
-                          disabled={!selectedCommandName || Boolean(runningCommandName) || isBusy || isSending}
+                          disabled={!selectedCommandName || Boolean(runningCommandName) || isBusy || isSendLocked}
                           className={clsx(
                             "flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
                             selectedCommandName && !runningCommandName
@@ -482,15 +488,15 @@ export function CommandInput({
 
             <button
               onClick={onSend}
-              disabled={!value.trim() || Boolean(runningCommandName) || isSending}
+              disabled={!value.trim() || Boolean(runningCommandName) || isSendLocked}
               className={clsx(
                 "flex items-center justify-center rounded-lg px-2.5 py-2 transition-all cursor-pointer",
-                value.trim() && !isSending
+                value.trim() && !isSendLocked
                   ? "bg-stone-900 text-white hover:bg-stone-800 shadow-sm active:scale-95"
                   : "bg-stone-100 text-stone-400",
               )}
               type="button"
-              title={isSending ? "Sending message" : queuedCount > 0 ? "Add message to queue" : "Send message"}
+              title={isPreparingSend ? "Preparing message" : isSending ? "Sending message" : queuedCount > 0 ? "Add message to queue" : "Send message"}
             >
               <ArrowUpIcon className="w-5 h-5" />
             </button>
@@ -499,14 +505,16 @@ export function CommandInput({
       </div>
 
       <div className="text-center mt-3 text-[11px] text-stone-400 font-medium tracking-wide flex items-center justify-center gap-1.5">
-        {isSending
+        {isPreparingSend
+          ? "Preparing your message..."
+          : isSending
           ? "Sending your message..."
           : queuedCount > 0
             ? `${queuedCount} queued message${queuedCount === 1 ? "" : "s"} waiting for this session.`
             : isBusy
               ? "OpenCode is still working on the current task. New sends will be queued."
               : "OpenCode can read and modify your local environment. Press"}
-        {!isSending && queuedCount === 0 && !isBusy ? (
+        {!isSendLocked && queuedCount === 0 && !isBusy ? (
           <>
         <kbd className="font-sans px-1.5 py-0.5 bg-stone-100 rounded border border-stone-200 shadow-sm ml-0.5 text-stone-500">
           Enter

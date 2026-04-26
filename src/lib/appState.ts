@@ -100,6 +100,62 @@ export function confirmOptimisticMessage(
   return sortMessages([...withoutOptimistic, { ...confirmedMessage, isPending: false, deliveryError: undefined }]);
 }
 
+function getMessageText(message: ChatMessage) {
+  return message.parts
+    .filter((part) => part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text as string)
+    .join("");
+}
+
+function canReplaceOptimisticWithFetched(optimistic: ChatMessage | undefined, fetched: ChatMessage) {
+  if (!optimistic || optimistic.role !== "user" || !optimistic.isPending || fetched.role !== "user") return false;
+
+  const optimisticText = getMessageText(optimistic);
+  const fetchedText = getMessageText(fetched);
+  if (!optimisticText || optimisticText !== fetchedText) return false;
+
+  if (optimistic.createdAt !== undefined && fetched.createdAt !== undefined) {
+    return fetched.createdAt >= optimistic.createdAt && fetched.createdAt - optimistic.createdAt <= 15_000;
+  }
+
+  return true;
+}
+
+export function mergeFetchedMessages(
+  current: ChatMessage[],
+  fetched: ChatMessage[],
+  optimisticMessageId?: string | null,
+) {
+  let merged = current;
+  let replacedOptimistic = false;
+
+  for (const message of fetched) {
+    const optimistic = optimisticMessageId
+      ? merged.find((item) => item.id === optimisticMessageId)
+      : undefined;
+
+    const hasAmbiguousPendingMatch = optimisticMessageId
+      ? merged.some(
+          (item) =>
+            item.id !== optimisticMessageId &&
+            item.role === "user" &&
+            item.isPending &&
+            getMessageText(item) === getMessageText(message),
+        )
+      : false;
+
+    if (!replacedOptimistic && optimisticMessageId && !hasAmbiguousPendingMatch && canReplaceOptimisticWithFetched(optimistic, message)) {
+      merged = confirmOptimisticMessage(merged, optimisticMessageId, message);
+      replacedOptimistic = true;
+      continue;
+    }
+
+    merged = upsertMessagesById(merged, [message]);
+  }
+
+  return merged;
+}
+
 export function mergeMessages(current: ChatMessage[], next: ChatMessage[]) {
   return upsertMessagesById(current, next);
 }
